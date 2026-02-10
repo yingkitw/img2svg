@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>img2svg Test Results Comparison</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #2c3e50;
+        }
+
+        .comparison {
+            max-width: 1200px;
+            margin: 0 auto 40px;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .comparison h2 {
+            margin-bottom: 15px;
+            color: #34495e;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .comparison h2 .complexity {
+            font-size: 0.7em;
+            background: #3498db;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-left: 10px;
+        }
+
+        .images {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 15px;
+        }
+
+        .image-container {
+            border: 2px solid #ecf0f1;
+            border-radius: 6px;
+            padding: 15px;
+            background: #fafafa;
+        }
+
+        .image-container h3 {
+            margin-bottom: 10px;
+            color: #7f8c8d;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .image-container img,
+        .image-container svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            border: 1px solid #bdc3c7;
+            background: white;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #ecf0f1;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-value.good {
+            color: #27ae60;
+        }
+
+        .stat-value.warning {
+            color: #f39c12;
+        }
+
+        .stat-value.bad {
+            color: #e74c3c;
+        }
+
+        .instructions {
+            max-width: 1200px;
+            margin: 0 auto 30px;
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .instructions h3 {
+            margin-bottom: 10px;
+            color: #856404;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+
+        .instructions code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        @media (max-width: 768px) {
+            .images {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>img2svg Test Results Comparison</h1>
+
+    <div class="instructions">
+        <h3>📋 How to Use This Page</h3>
+        <ol>
+            <li>Run the conversion script: <code>./examples/convert_all.sh</code></li>
+            <li>Open this file in a web browser: <code>open examples/compare.html</code></li>
+            <li>Compare each PNG (original) with its SVG (converted)</li>
+            <li>Check the stats for file size and conversion time</li>
+            <li>Review visual quality and accuracy</li>
+        </ol>
+    </div>
+
+    <!-- Simple -->
+    <div class="comparison">
+        <h2>
+            1. Simple Test
+            <span class="complexity">Basic</span>
+        </h2>
+        <p>Basic geometric shapes with solid colors. Should achieve near-perfect conversion.</p>
+
+        <div class="images">
+            <div class="image-container">
+                <h3>Original PNG</h3>
+                <img src="input/simple.png" alt="Simple - Original">
+            </div>
+            <div class="image-container">
+                <h3>Converted SVG</h3>
+                <img src="output/simple.svg" alt="Simple - Converted">
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Input Size</div>
+                <div class="stat-value">2.3 KB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output Size</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Conversion Time</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value">--</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Medium -->
+    <div class="comparison">
+        <h2>
+            2. Medium Test
+            <span class="complexity">Medium</span>
+        </h2>
+        <p>Multiple shapes with overlapping. Tests edge handling and color blending.</p>
+
+        <div class="images">
+            <div class="image-container">
+                <h3>Original PNG</h3>
+                <img src="input/medium.png" alt="Medium - Original">
+            </div>
+            <div class="image-container">
+                <h3>Converted SVG</h3>
+                <img src="output/medium.svg" alt="Medium - Converted">
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Input Size</div>
+                <div class="stat-value">2.7 KB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output Size</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Conversion Time</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value">--</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Complex -->
+    <div class="comparison">
+        <h2>
+            3. Complex Test
+            <span class="complexity">High</span>
+        </h2>
+        <p>Many shapes and patterns (40+ elements). Tests performance and detail preservation.</p>
+
+        <div class="images">
+            <div class="image-container">
+                <h3>Original PNG</h3>
+                <img src="input/complex.png" alt="Complex - Original">
+            </div>
+            <div class="image-container">
+                <h3>Converted SVG</h3>
+                <img src="output/complex.svg" alt="Complex - Converted">
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Input Size</div>
+                <div class="stat-value">5.7 KB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output Size</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Conversion Time</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value">--</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Very Complex -->
+    <div class="comparison">
+        <h2>
+            4. Very Complex Test
+            <span class="complexity">Very High</span>
+        </h2>
+        <p>Stress test with 400+ elements including concentric circles, patterns, and random shapes.</p>
+
+        <div class="images">
+            <div class="image-container">
+                <h3>Original PNG</h3>
+                <img src="input/very_complex.png" alt="Very Complex - Original">
+            </div>
+            <div class="image-container">
+                <h3>Converted SVG</h3>
+                <img src="output/very_complex.svg" alt="Very Complex - Converted">
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Input Size</div>
+                <div class="stat-value">13 KB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output Size</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Conversion Time</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value">--</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gradient -->
+    <div class="comparison">
+        <h2>
+            5. Gradient Test
+            <span class="complexity">Special</span>
+        </h2>
+        <p>Color gradients to test gradient detection and smooth color transitions.</p>
+
+        <div class="images">
+            <div class="image-container">
+                <h3>Original PNG</h3>
+                <img src="input/gradient.png" alt="Gradient - Original">
+            </div>
+            <div class="image-container">
+                <h3>Converted SVG</h3>
+                <img src="output/gradient.svg" alt="Gradient - Converted">
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Input Size</div>
+                <div class="stat-value">1.4 KB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output Size</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Conversion Time</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value">--</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Update stats dynamically if conversion.log exists
+        // This is a placeholder for future enhancement
+        console.log('img2svg Comparison Tool');
+        console.log('Run ./examples/convert_all.sh to generate SVG files');
+    </script>
+</body>
+</html>

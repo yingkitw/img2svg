@@ -1,0 +1,42 @@
+[package]
+name = "img2svg"
+version = "0.1.0"
+edition = "2024"
+description = "A rust native image to SVG converter in CLI/MCP/Library"
+authors = ["Ying Kit WONG"]
+license = "Apache-2.0"
+documentation = "https://docs.rs/img2svg"
+repository = "https://github.com/yingkitw/img2svg"
+homepage = "https://github.com/yingkitw/img2svg"
+keywords = ["image", "svg", "vectorization", "conversion", "mcp"]
+
+[dependencies]
+image = "0.24"
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+svg = "0.13"
+rgb = "0.8"
+petgraph = "0.6"
+thiserror = "1.0"
+anyhow = "1.0"
+
+[features]
+default = []
+mcp = []
+
+[lib]
+name = "img2svg"
+path = "src/lib.rs"
+
+[[bin]]
+name = "img2svg"
+path = "src/main.rs"
+
+[[bin]]
+name = "img2svg-mcp"
+path = "src/mcp.rs"
+required-features = []
+
+[dev-dependencies]
+# Add test dependencies if needed
