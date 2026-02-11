@@ -10,9 +10,9 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--threshold` / `-t`: Edge detection threshold (0.0-1.0, default: 0.1)
   - `--smooth` / `-s`: Path smoothing level (0-10, default: 5)
   - `--preprocess` / `-p`: Apply edge-preserving smoothing and color reduction
-  - `--hierarchical`: Enable hierarchical decomposition
-  - `--advanced` / `-a`: Use advanced SVG generation
-  - `--enhanced` / `-e`: Use enhanced pipeline (Bézier curves, edge-aware quantization, flood-fill)
+  - `--original`: Use original pipeline (line segments, RDP simplification)
+  - `--hierarchical`: Enable hierarchical decomposition (original pipeline only)
+  - `--advanced` / `-a`: Use advanced SVG generation (original pipeline only)
 
 ## Output
 - SVG file with filled `<path>` elements representing color regions
@@ -22,7 +22,21 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 
 ## Pipeline
 
-### Standard Pipeline (default)
+### Default Pipeline (Bézier curves)
+1. **Load** → `image_processor::load_image` → `ImageData`
+2. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
+3. **[Auto] Preprocess** → Bilateral filter for photos (auto-detected when >1000 colors)
+4. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
+5. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine → majority-vote smoothing
+6. **Contour** → `vectorizer::marching_squares_contours` → Per-color binary mask → sub-pixel contours
+7. **[Fast path]** Thin stripes (< 2px) → direct SVG rect via `svg_override`
+8. **[Parallel] Smooth** → `path_simplifier::smooth_with_corners` → Gaussian smoothing preserving corners
+9. **[Parallel] Simplify** → `path_simplifier::visvalingam_whyatt` → Area-based simplification with corner preservation
+10. **[Parallel] Snap** → Edge snapping + `inject_image_corners` + `dedup_consecutive`
+11. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with Newton-Raphson + G1 continuity
+12. **SVG emit** → `enhanced_vectorizer::generate_enhanced_svg` → Background rect + gap-filling strokes + color grouping
+
+### Original Pipeline (--original flag)
 1. **Load** → `image_processor::load_image` → `ImageData { width, height, pixels: Vec<RGBA8> }`
 2. **[Optional] Preprocess** → `preprocessor::preprocess` → Bilateral filter + color reduction
 3. **Quantize** → `image_processor::quantize_colors` → Median-cut algorithm
@@ -31,19 +45,6 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 6. **Smooth** → `vectorizer::smooth_boundary` → Gaussian neighbor averaging
 7. **Simplify** → `vectorizer::rdp_simplify` → Ramer-Douglas-Peucker with epsilon=2.0
 8. **SVG emit** → `svg_generator::generate_svg` → Background rect + merged line-segment paths
-
-### Enhanced Pipeline (--enhanced flag)
-1. **Load** → `image_processor::load_image` → `ImageData`
-2. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
-3. **[Optional] Preprocess** → Bilateral filter for photos (auto-detected)
-4. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
-5. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine → majority-vote smoothing
-6. **Extract** → `region_extractor::extract_regions_by_index` → 8-connectivity flood-fill → Moore contour tracing
-7. **[Optional] Recolor** → `region_extractor::recolor_from_original` → Sample original image for true colors
-8. **[Parallel] Smooth** → `path_simplifier::smooth_with_corners` → Gaussian smoothing preserving corners
-9. **[Parallel] Simplify** → `path_simplifier::visvalingam_whyatt` → Area-based simplification with corner preservation
-10. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with Newton-Raphson + G1 continuity
-11. **SVG emit** → `enhanced_vectorizer::generate_enhanced_svg` → Background rect + gap-filling strokes + color grouping
 
 ### Preprocessing Mode (--preprocess)
 Applied before quantization for photographs:
@@ -58,7 +59,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 160 unit tests and 9 integration tests passing
+- ✅ 252 tests passing (121 lib + 120 bin + 9 integration + 2 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time

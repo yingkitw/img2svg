@@ -1,6 +1,6 @@
 # img2svg
 
-A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with advanced algorithms for color quantization, contour tracing, and path optimization.
+A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
 [![Tests](https://img.shields.io/badge/tests-146%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -29,11 +29,12 @@ Converting raster images to vector format is essential for:
 
 ### Key Advantages
 
-1. **Smart Color Quantization**: Median-cut algorithm preserves visual quality while reducing colors
-2. **Sub-pixel Accuracy**: Marching squares algorithm produces precise contours
-3. **Path Optimization**: RDP simplification creates compact SVG files without losing detail
-4. **Flexible Usage**: CLI tool, Rust library, and MCP server
-5. **Zero Dependencies**: No external image processing libraries required
+1. **Cubic Bézier Curves**: Smooth curves via least-squares fitting with Newton-Raphson reparameterization
+2. **Edge-Aware Quantization**: K-means++ with perceptual color distance and Sobel edge detection
+3. **Sub-pixel Accuracy**: Marching squares contour extraction with corner-aware path splitting
+4. **Smart SVG Output**: `L` for lines, `C` for curves, collinear merge, thin stripe fast path
+5. **Auto Photo Preprocessing**: Bilateral filter + color reduction for photographs
+6. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Examples & Quality
 
@@ -200,8 +201,9 @@ done
 | `--colors` | `-c` | 16 | Number of colors for quantization (1-64) |
 | `--threshold` | `-t` | 0.1 | Edge detection threshold (0.0-1.0) |
 | `--smooth` | `-s` | 5 | Path smoothing level (0-10) |
-| `--hierarchical` | | false | Enable hierarchical decomposition |
-| `--advanced` | `-a` | false | Use advanced SVG generation |
+| `--original` | | false | Use original pipeline (line segments, RDP) instead of default Bézier |
+| `--hierarchical` | | false | Enable hierarchical decomposition (original pipeline only) |
+| `--advanced` | `-a` | false | Use advanced SVG generation (original pipeline only) |
 
 ### Rust Library
 
@@ -292,15 +294,20 @@ The MCP server provides one tool:
 
 ## Algorithm
 
-img2svg uses a sophisticated multi-stage pipeline:
+img2svg uses a sophisticated multi-stage pipeline (default Bézier pipeline):
 
-1. **Color Quantization**: Median-cut algorithm reduces the palette while preserving color distribution
-2. **Pixel Grouping**: Groups pixels by quantized color, sorted by area for proper z-order
-3. **Contour Tracing**: Marching squares on per-color binary masks produces sub-pixel-accurate boundaries
-4. **Path Smoothing**: Gaussian neighbor averaging reduces jaggedness without adding points
-5. **Path Simplification**: Ramer-Douglas-Peucker algorithm reduces point count (epsilon=2.0)
-6. **Edge Snapping**: Points near image boundaries are snapped to exact edges
-7. **SVG Generation**: Background rect + one `<path>` per color with merged `M...Z` subpaths
+1. **Edge Detection**: Sobel gradient for edge-aware quantization boundaries
+2. **Color Quantization**: K-means++ initialization + k-means refinement with perceptual color distance
+3. **Majority-Vote Smoothing**: Edge-aware smoothing merges thin artifacts (adaptive: 4 passes for graphics, 2 for photos)
+4. **Contour Tracing**: Marching squares on per-color binary masks produces sub-pixel-accurate boundaries
+5. **Thin Stripe Fast Path**: Contours < 2px → direct SVG rectangles (preserves line patterns)
+6. **Corner-Preserving Smoothing**: Gaussian smoothing that preserves sharp corners
+7. **Visvalingam-Whyatt Simplification**: Area-based point removal with corner preservation
+8. **Edge Snapping + Corner Injection**: Points snapped to image edges; 90° corners injected at edge transitions
+9. **Cubic Bézier Fitting**: Least-squares fit with Newton-Raphson reparameterization + G1 continuity
+10. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes
+
+The original pipeline (`--original`) uses median-cut quantization, RDP simplification, and line-segment SVG paths.
 
 ## Performance
 

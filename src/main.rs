@@ -61,25 +61,8 @@ fn main() -> Result<()> {
         eprintln!();
     }
 
-    if cli.enhanced {
-        eprintln!("Using enhanced pipeline (Bézier curves, edge-aware quantization, flood-fill regions)...");
-        let options = EnhancedOptions {
-            num_colors: cli.colors,
-            // Enhanced pipeline auto-preprocesses photos by default (preprocess=true).
-            // CLI -p flag forces preprocessing even for non-photo images.
-            preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
-            ..Default::default()
-        };
-        let vector_data = vectorize_enhanced(&image_data, &options)?;
-        write_enhanced_svg(&vector_data, &output_path)?;
-        eprintln!(
-            "  {} paths, background #{:02x}{:02x}{:02x}",
-            vector_data.paths.len(),
-            vector_data.background_color.0,
-            vector_data.background_color.1,
-            vector_data.background_color.2,
-        );
-    } else {
+    if cli.original {
+        eprintln!("Using original pipeline (line segments, RDP simplification)...");
         let vectorized_data = vectorizer::vectorize(
             &image_data,
             cli.colors,
@@ -93,6 +76,21 @@ fn main() -> Result<()> {
         } else {
             svg_generator::generate_svg(&vectorized_data, &output_path)?;
         }
+    } else {
+        let options = EnhancedOptions {
+            num_colors: cli.colors,
+            preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
+            ..Default::default()
+        };
+        let vector_data = vectorize_enhanced(&image_data, &options)?;
+        write_enhanced_svg(&vector_data, &output_path)?;
+        eprintln!(
+            "  {} paths, background #{:02x}{:02x}{:02x}",
+            vector_data.paths.len(),
+            vector_data.background_color.0,
+            vector_data.background_color.1,
+            vector_data.background_color.2,
+        );
     }
 
     println!("Conversion complete!");

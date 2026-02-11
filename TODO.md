@@ -54,7 +54,7 @@
 - [x] Recoloring from original image for true color accuracy
 - [x] Adaptive color count based on image size (256/128/64)
 - [x] Rayon parallel path processing (smooth → simplify → Bézier fit)
-- [x] --enhanced CLI flag to select new pipeline (original preserved for comparison)
+- [x] Bézier pipeline promoted to default; --original flag for legacy pipeline
 - [x] 50+ new unit tests for enhanced modules
 - [x] SVG size optimization: L for linear curves, C for true Bézier, collinear L merge
 - [x] Distance-based collinear merge catches diagonal staircases from marching squares

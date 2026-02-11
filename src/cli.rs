@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "img2svg")]
-#[command(about = "A high-quality image to SVG converter")]
+#[command(about = "A high-quality image to SVG converter with Bézier curves")]
 #[command(version)]
 pub struct Cli {
     /// Input image file
@@ -38,7 +38,7 @@ pub struct Cli {
     #[arg(short = 'p', long)]
     pub preprocess: bool,
 
-    /// Use enhanced pipeline (Bézier curves, edge-aware quantization, flood-fill regions)
-    #[arg(short = 'e', long)]
-    pub enhanced: bool,
+    /// Use original pipeline (line segments, RDP simplification) instead of default Bézier
+    #[arg(long)]
+    pub original: bool,
 }
