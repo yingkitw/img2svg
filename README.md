@@ -99,6 +99,29 @@ See the `examples/` directory for sample conversions demonstrating quality.
 - Output: SVG with complex paths
 - Result: Details preserved, clean vector output
 
+### Photograph with Preprocessing (Lenna)
+
+Photographs benefit from the `--preprocess` flag which applies edge-preserving smoothing and color reduction.
+
+| Input PNG | Output SVG (with --preprocess) |
+|-----------|------------------------------|
+| ![lenna.png](examples/input/lenna.png) | ![lenna.svg](examples/output/lenna.svg) |
+
+**Comparison:**
+- **Without preprocessing**: 87 KB SVG with heavy color banding
+- **With preprocessing**: 28 KB SVG (67% smaller) with cleaner regions
+
+**Details:**
+- Command: `img2svg -i examples/input/lenna.png -o examples/output/lenna.svg --preprocess -c 12 -t 0.15 -s 3`
+- Input: 512x512 PNG - Standard test photograph
+- Output: Vector version with preprocessing applied
+- Result: Preprocessing significantly reduces file size and color banding for photographs
+
+**What preprocessing does:**
+- **Bilateral filtering**: Smooths flat areas while preserving edges
+- **Color reduction**: Reduces color noise before quantization
+- **Result**: Cleaner color regions, smaller file size, less posterization
+
 ### Comparison with Alternatives
 
 ```bash
