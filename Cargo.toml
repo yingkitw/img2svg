@@ -1,6 +1,6 @@
 [package]
 name = "img2svg"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 description = "A rust native image to SVG converter in CLI/MCP/Library"
 authors = ["Ying Kit WONG"]
@@ -9,6 +9,7 @@ documentation = "https://docs.rs/img2svg"
 repository = "https://github.com/yingkitw/img2svg"
 homepage = "https://github.com/yingkitw/img2svg"
 keywords = ["image", "svg", "vectorization", "conversion", "mcp"]
+default-run = "img2svg"
 
 [dependencies]
 image = "0.24"

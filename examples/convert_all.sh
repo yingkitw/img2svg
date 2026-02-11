@@ -52,7 +52,7 @@ for img in "$INPUT_DIR"/*.png; do
 
         # Time the conversion (use python for ms precision on macOS)
         start_time=$(python3 -c 'import time; print(int(time.time()*1000))')
-        if cargo run --release -- --input "$img" --output "$output" 2>&1; then
+        if cargo run --release --bin img2svg -- --input "$img" --output "$output" 2>&1; then
             end_time=$(python3 -c 'import time; print(int(time.time()*1000))')
             duration=$(( end_time - start_time ))
 

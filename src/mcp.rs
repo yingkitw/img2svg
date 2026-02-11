@@ -13,6 +13,7 @@ use std::path::Path;
 #[derive(Debug, serde::Deserialize)]
 struct McpRequest {
     #[serde(default)]
+    #[allow(dead_code)]
     jsonrpc: String,
     #[serde(flatten)]
     kind: RequestKind,

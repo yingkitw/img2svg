@@ -33,4 +33,8 @@ pub struct Cli {
     /// Use advanced SVG generation with layers
     #[arg(short, long)]
     pub advanced: bool,
+
+    /// Apply preprocessing (edge-preserving smoothing + color reduction) for photos
+    #[arg(short = 'p', long)]
+    pub preprocess: bool,
 }

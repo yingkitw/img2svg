@@ -35,6 +35,85 @@ Converting raster images to vector format is essential for:
 4. **Flexible Usage**: CLI tool, Rust library, and MCP server
 5. **Zero Dependencies**: No external image processing libraries required
 
+## Examples & Quality
+
+See the `examples/` directory for sample conversions demonstrating quality.
+
+### Simple Graphics (8 colors)
+
+| Input | Output |
+|-------|--------|
+| ![simple.png](examples/input/simple.png) | ![simple.svg](examples/output/simple.svg) |
+
+**Details:**
+- Command: `img2svg -i examples/input/simple.png -o examples/output/simple.svg -c 8 -s 3`
+- Input: 50x50 PNG (2KB) - Basic geometric shapes
+- Output: SVG with clean vector paths
+- Result: Perfect edges, scalable without quality loss
+
+### Gradients (16 colors)
+
+| Input | Output |
+|-------|--------|
+| ![gradient.png](examples/input/gradient.png) | ![gradient.svg](examples/output/gradient.svg) |
+
+**Details:**
+- Command: `img2svg -i examples/input/gradient.png -o examples/output/gradient.svg -c 16 -s 5`
+- Input: 100x100 PNG (1KB) - Smooth gradient
+- Output: SVG with banding minimized
+- Result: Smooth color transitions, vector-friendly
+
+### Medium Complexity (16 colors)
+
+| Input | Output |
+|-------|--------|
+| ![medium.png](examples/input/medium.png) | ![medium.svg](examples/output/medium.svg) |
+
+**Details:**
+- Command: `img2svg -i examples/input/medium.png -o examples/output/medium.svg -c 16 -s 5`
+- Input: 100x100 PNG (2KB)
+- Output: SVG with clean regions
+- Result: Preserves shapes, smooth curves
+
+### Complex Illustration (16 colors)
+
+| Input | Output |
+|-------|--------|
+| ![complex.png](examples/input/complex.png) | ![complex.svg](examples/output/complex.svg) |
+
+**Details:**
+- Command: `img2svg -i examples/input/complex.png -o examples/output/complex.svg -c 16 -s 5`
+- Input: 200x200 PNG (6KB) - Detailed illustration
+- Output: SVG with fine details preserved
+- Result: Clean paths, scalable
+
+### Very Complex (32 colors)
+
+| Input | Output |
+|-------|--------|
+| ![very_complex.png](examples/input/very_complex.png) | ![very_complex.svg](examples/output/very_complex.svg) |
+
+**Details:**
+- Command: `img2svg -i examples/input/very_complex.png -o examples/output/very_complex.svg -c 32 -s 7`
+- Input: 200x200 PNG (13KB) - Highly detailed
+- Output: SVG with complex paths
+- Result: Details preserved, clean vector output
+
+### Comparison with Alternatives
+
+```bash
+# ImageMagick trace (often produces jagged edges)
+convert input.png svg:output-imagemagick.svg
+
+# img2svg (smooth curves, better color accuracy)
+img2svg -i input.png -o img2svg.svg -c 16 -s 5
+```
+
+**Quality Differences**:
+- img2svg: Smooth curves, accurate colors, compact paths
+- ImageMagick: Often produces jagged edges, limited color optimization
+- Potrace: B&W only, requires pre-processing for color images
+
 ## Installation
 
 ### CLI Tool
@@ -73,11 +152,14 @@ cargo install --path .
 # Basic conversion
 img2svg -i input.png -o output.svg
 
-# High-quality conversion with more colors
-img2svg -i photo.jpg -o photo.svg -c 32 -s 7
+# Photo with preprocessing (recommended for photographs)
+img2svg -i photo.jpg -o photo.svg --preprocess -c 12
+
+# High-quality graphics with more colors
+img2svg -i logo.png -o logo.svg -c 32 -s 7
 
 # Simple logo with fewer colors
-img2svg -i logo.png -o logo.svg -c 8 -s 2
+img2svg -i icon.png -o icon.svg -c 8 -s 2
 
 # Batch convert multiple files
 for img in *.png; do
@@ -91,6 +173,7 @@ done
 |--------|-------|---------|-------------|
 | `--input` | `-i` | *required* | Input image file (PNG, JPEG, etc.) |
 | `--output` | `-o` | auto | Output SVG file (defaults to input with .svg extension) |
+| `--preprocess` | `-p` | false | Apply edge-preserving smoothing and color reduction (great for photos) |
 | `--colors` | `-c` | 16 | Number of colors for quantization (1-64) |
 | `--threshold` | `-t` | 0.1 | Edge detection threshold (0.0-1.0) |
 | `--smooth` | `-s` | 5 | Path smoothing level (0-10) |
@@ -196,50 +279,6 @@ img2svg uses a sophisticated multi-stage pipeline:
 6. **Edge Snapping**: Points near image boundaries are snapped to exact edges
 7. **SVG Generation**: Background rect + one `<path>` per color with merged `M...Z` subpaths
 
-## Examples & Quality
-
-The `examples/` directory contains sample conversions demonstrating quality:
-
-### Simple Graphics (8 colors)
-
-**Input**: `examples/input/simple.png` (50x50, basic shapes)
-**Output**: `examples/output/simple.svg`
-
-- Command: `img2svg -i simple.png -o simple.svg -c 8 -s 3`
-- Result: Clean vector shapes with perfect edges
-- File size: Often smaller than original PNG
-
-### Gradients (16 colors)
-
-**Input**: `examples/input/gradient.png` (100x100, smooth gradient)
-**Output**: `examples/output/gradient.svg`
-
-- Command: `img2svg -i gradient.png -o gradient.svg -c 16 -s 5`
-- Result: Smooth color transitions with banding minimized
-
-### Complex Illustrations (32 colors)
-
-**Input**: `examples/input/complex.png` (200x200, detailed)
-**Output**: `examples/output/complex.svg`
-
-- Command: `img2svg -i complex.png -o complex.svg -c 32 -s 7`
-- Result: Preserves fine details while reducing complexity
-
-### Comparison with Alternatives
-
-```bash
-# ImageMagick trace (often produces jagged edges)
-convert input.png svg:output-imagemagick.svg
-
-# img2svg (smooth curves, better color accuracy)
-img2svg -i input.png -o img2svg.svg -c 16 -s 5
-```
-
-**Quality Differences**:
-- img2svg: Smooth curves, accurate colors, compact paths
-- ImageMagick: Often produces jagged edges, limited color optimization
-- Potrace: B&W only, requires pre-processing for color images
-
 ## Performance
 
 img2svg is optimized for speed and memory:
@@ -263,23 +302,43 @@ Benchmarks (1000x1000px image):
 - Use fewer colors (8-16)
 - Lower smoothing (2-4)
 - Higher threshold (0.15-0.2)
+- Results: Clean vector shapes, small file size
 
 ### For Photos
-- More colors (32-64)
-- Higher smoothing (6-10)
-- Lower threshold (0.05-0.1)
+
+> **Best results**: Use `--preprocess` flag which applies edge-preserving smoothing and color reduction
+
+```bash
+# Recommended for photos
+img2svg -i photo.jpg -o photo.svg --preprocess -c 12 -t 0.15 -s 3
+```
+
+**What preprocessing does:**
+- **Bilateral filtering**: Smooths flat areas while preserving edges
+- **Color reduction**: Reduces color noise before quantization
+- **Result**: Cleaner regions, smaller file size, less posterization
+
+**Without preprocessing:**
+- Use fewer colors (8-12)
+- Higher threshold (0.15-0.2)
+- Lower smoothing (2-4)
 
 ### For Illustrations
 - Medium colors (16-32)
 - Medium smoothing (4-6)
 - Default threshold (0.1)
 
+### For Clip Art
+- Fewer colors (4-8)
+- Higher smoothing (3-5)
+- Higher threshold (0.15-0.25)
+
 ## Limitations
 
-- Best with images having clear color boundaries
-- Photorealistic images may need higher color counts
-- Very complex gradients may show some banding
-- Extremely detailed images may produce large SVG files
+- **Best with**: Images with clear color boundaries (logos, icons, flat illustrations)
+- **Photos**: Use `--preprocess` flag for better results, but expect some loss of detail
+- **Not suitable for**: Highly detailed photorealistic images with complex gradients
+- For complex photos, consider keeping the original raster format
 
 ## Contributing
 

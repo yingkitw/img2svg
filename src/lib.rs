@@ -29,10 +29,12 @@
 pub mod image_processor;
 pub mod svg_generator;
 pub mod vectorizer;
+pub mod preprocessor;
 
 pub use image_processor::{load_image, quantize_colors, ImageData};
 pub use svg_generator::{generate_svg, generate_svg_advanced};
 pub use vectorizer::{vectorize, Curve, Point, VectorizedData};
+pub use preprocessor::{preprocess, PreprocessOptions};
 pub use anyhow::Result;
 
 /// Options for image to SVG conversion
