@@ -61,8 +61,11 @@
 - [x] Adaptive simplification tolerance (2x for photos, 1.5 for graphics)
 - [x] Visual comparison page with lenna.png, 6 test images total
 - [x] Control point clamping to image bounds (fixes corner bulging in medium.png)
-- [x] Degenerate thin-line path filtering (fixes very_complex.png bloat)
 - [x] Auto-preprocessing for photos in enhanced pipeline (bilateral filter + color reduction)
+- [x] Image corner injection: detect edge transitions after snapping, insert 90° corner points
+- [x] Consecutive point dedup after snapping (fixes fitter angle detection at image corners)
+- [x] Thin stripe fast path: contours < 2px height/width → direct SVG rect via svg_override
+- [x] Adaptive majority-vote smoothing (4 passes for complex graphics, 2 for photos)
 
 ## Pending 🚧
 

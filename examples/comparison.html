@@ -142,15 +142,15 @@
       <td><strong>medium</strong></td>
       <td>400x400, 9 colors</td>
       <td>1,321 B</td>
-      <td>2,039 B</td>
+      <td>2,084 B</td>
       <td>10</td>
-      <td>Control points clamped to image bounds; smooth Bézier circles; clean edges</td>
+      <td>Image corners injected as sharp 90° turns; smooth Bézier circles; clean edges</td>
     </tr>
     <tr>
       <td><strong>complex</strong></td>
       <td>400x400, many shapes</td>
       <td>6,157 B</td>
-      <td>7,220 B</td>
+      <td>7,057 B</td>
       <td>75</td>
       <td>Similar size; smoother Bézier curves on all shapes; corners preserved</td>
     </tr>
@@ -158,25 +158,25 @@
       <td><strong>very_complex</strong></td>
       <td>400x400, 100+ shapes</td>
       <td>12,941 B</td>
-      <td>8,201 B</td>
-      <td>151</td>
-      <td><span class="tag tag-better">0.6×!</span> Thin stripes → 1px rects; colored shapes preserved</td>
+      <td>13,456 B</td>
+      <td>317</td>
+      <td>1.0× Thin stripes rendered as 1px filled rects; colored shapes preserved</td>
     </tr>
     <tr>
       <td><strong>gradient</strong></td>
       <td>400x400, smooth gradient</td>
       <td>1,577 B</td>
-      <td>2,175 B</td>
-      <td>17</td>
+      <td>2,117 B</td>
+      <td>16</td>
       <td>Smoother color banding with perceptual distance; edge-aware quantization</td>
     </tr>
     <tr>
       <td><strong>lenna</strong></td>
       <td>512x512, photograph</td>
       <td>89,452 B</td>
-      <td>46,354 B</td>
-      <td>319</td>
-      <td><span class="tag tag-better">0.5×!</span> Auto-preprocessed (bilateral filter); perceptual k-means++; smooth Bézier</td>
+      <td>41,667 B</td>
+      <td>290</td>
+      <td><span class="tag tag-better">0.4×!</span> Auto-preprocessed (bilateral filter); perceptual k-means++; smooth Bézier</td>
     </tr>
   </tbody>
 </table>

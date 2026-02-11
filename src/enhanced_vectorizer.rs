@@ -78,6 +78,8 @@ pub struct EnhancedPath {
     pub curves: Vec<BezierCurve>,
     pub color: (u8, u8, u8, u8),
     pub area: usize,
+    /// Pre-built SVG path data for thin stripe rects (bypasses bezier_to_svg_path).
+    pub svg_override: Option<String>,
 }
 
 /// Run the enhanced vectorization pipeline.
@@ -117,12 +119,23 @@ pub fn vectorize_enhanced(
 
     // Edge detection + edge-aware quantization (k-means++ with perceptual distance)
     let edges = detect_edges_sobel(&preprocessed);
+    // Detect if image is a photo (continuous tones) vs complex graphic (many distinct colors).
+    // Photos: many colors, smooth gradients → fewer smoothing passes, bilateral preprocess.
+    // Complex graphics: many colors, sharp edges, thin features → more smoothing passes.
+    let is_photo = is_many_colors && n_colors > 1000;
+    // More smoothing passes for non-photo images to merge thin stripes/artifacts.
+    // Edge-aware smoothing preserves strong-edge shapes while merging weak-edge thin features.
+    let smooth_passes = if !is_photo && is_many_colors {
+        options.smoothing_passes.max(4)
+    } else {
+        options.smoothing_passes
+    };
     let (quantized, _indices, _palette) = quantize_edge_aware(
         &preprocessed,
         target_colors,
         &edges,
         options.edge_threshold,
-        options.smoothing_passes,
+        smooth_passes,
     );
 
     // Group pixels by quantized color
@@ -185,6 +198,27 @@ pub fn vectorize_enhanced(
                     continue;
                 }
 
+                // Fast path: thin stripe contours (height or width < 2px) →
+                // emit as simple rectangle directly (bypass Bézier fitter which collapses thin shapes).
+                let (cb_min_x, cb_min_y, cb_max_x, cb_max_y) = bounds_from_points(contour);
+                let cb_w = cb_max_x - cb_min_x;
+                let cb_h = cb_max_y - cb_min_y;
+                if (cb_h < 2.0 && cb_w >= 2.0) || (cb_w < 2.0 && cb_h >= 2.0) {
+                    let x0 = cb_min_x.round() as i64;
+                    let y0 = cb_min_y.round() as i64;
+                    let x1 = if cb_w < 2.0 { x0 + cb_w.ceil().max(1.0) as i64 } else { cb_max_x.round() as i64 };
+                    let y1 = if cb_h < 2.0 { y0 + cb_h.ceil().max(1.0) as i64 } else { cb_max_y.round() as i64 };
+                    // Emit direct SVG rect path (bypasses bezier_to_svg_path collinear merge)
+                    let svg = format!("M{x0},{y0}L{x1},{y0}L{x1},{y1}L{x0},{y1}Z");
+                    paths.push(EnhancedPath {
+                        curves: Vec::new(),
+                        color: *color,
+                        area: *pixel_count,
+                        svg_override: Some(svg),
+                    });
+                    continue;
+                }
+
                 // Smooth with corner preservation (enhanced)
                 let smoothed = smooth_with_corners(
                     contour,
@@ -212,6 +246,14 @@ pub fn vectorize_enhanced(
                     })
                     .collect();
 
+                // Inject image corner points where contour transitions between edges.
+                // E.g. right edge (x=W) → top edge (y=0) needs corner (W,0) inserted.
+                let snapped = inject_image_corners(&snapped, w_f, h_f);
+
+                // Deduplicate consecutive near-identical points (from snapping + corner injection).
+                // Without this, duplicate points at image corners break the fitter's angle detection.
+                let snapped = dedup_consecutive(&snapped, 0.5);
+
                 if snapped.len() < 3 || polygon_area(&snapped) < min_poly_area {
                     continue;
                 }
@@ -232,6 +274,7 @@ pub fn vectorize_enhanced(
                         curves,
                         color: *color,
                         area: *pixel_count,
+                        svg_override: None,
                     });
                 }
             }
@@ -249,6 +292,80 @@ pub fn vectorize_enhanced(
         background_color,
         paths: enhanced_paths,
     })
+}
+
+/// Remove consecutive near-duplicate points (distance < threshold).
+fn dedup_consecutive(points: &[Point], threshold: f64) -> Vec<Point> {
+    if points.is_empty() {
+        return Vec::new();
+    }
+    let t2 = threshold * threshold;
+    let mut result = vec![points[0].clone()];
+    for p in &points[1..] {
+        let last = result.last().unwrap();
+        let dx = p.x - last.x;
+        let dy = p.y - last.y;
+        if dx * dx + dy * dy > t2 {
+            result.push(p.clone());
+        }
+    }
+    result
+}
+
+/// Classify which image edge a point lies on (if any).
+/// Returns: 'T' (top, y=0), 'B' (bottom, y=H), 'L' (left, x=0), 'R' (right, x=W), or ' ' (interior).
+fn edge_of(p: &Point, w: f64, h: f64) -> char {
+    let eps = 0.01;
+    if p.y.abs() < eps { 'T' }
+    else if (p.y - h).abs() < eps { 'B' }
+    else if p.x.abs() < eps { 'L' }
+    else if (p.x - w).abs() < eps { 'R' }
+    else { ' ' }
+}
+
+/// Inject image corner points where a contour transitions between two different
+/// image edges. For example, if point A is on the right edge (x=W) and point B
+/// is on the top edge (y=0), the corner (W,0) is inserted between them.
+/// This ensures the Bézier fitter detects the 90° corner and splits there.
+fn inject_image_corners(points: &[Point], w: f64, h: f64) -> Vec<Point> {
+    if points.len() < 3 {
+        return points.to_vec();
+    }
+
+    let corners = [
+        ('T', 'R', Point { x: w, y: 0.0 }),  // top-right
+        ('R', 'B', Point { x: w, y: h }),      // bottom-right
+        ('B', 'L', Point { x: 0.0, y: h }),    // bottom-left
+        ('L', 'T', Point { x: 0.0, y: 0.0 }), // top-left
+    ];
+
+    let mut result = Vec::with_capacity(points.len() + 4);
+    let n = points.len();
+
+    for i in 0..n {
+        result.push(points[i].clone());
+
+        let j = (i + 1) % n;
+        let e1 = edge_of(&points[i], w, h);
+        let e2 = edge_of(&points[j], w, h);
+
+        // Both on edges, but different edges → insert corner
+        if e1 != ' ' && e2 != ' ' && e1 != e2 {
+            for &(ea, eb, ref corner) in &corners {
+                if (e1 == ea && e2 == eb) || (e1 == eb && e2 == ea) {
+                    // Don't insert if already very close to the corner
+                    let d1 = (points[i].x - corner.x).powi(2) + (points[i].y - corner.y).powi(2);
+                    let d2 = (points[j].x - corner.x).powi(2) + (points[j].y - corner.y).powi(2);
+                    if d1 > 1.0 && d2 > 1.0 {
+                        result.push(corner.clone());
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    result
 }
 
 /// Compute signed polygon area (Shoelace formula).
@@ -292,41 +409,20 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
     for group in &groups {
         let color_hex = &group.color_hex;
 
-        // Collect subpath data, converting thin stripes to rectangles
+        // Collect subpath data
         let mut path_data = String::new();
         for path in &group.paths {
-            let (min_x, min_y, max_x, max_y) = curve_bounds(&path.curves);
-            let w = max_x - min_x;
-            let h = max_y - min_y;
-            // Thin horizontal stripe: wide but near-zero height → emit as 1px rect
-            if h < 1.0 && w >= 2.0 {
-                let y0 = min_y.round() as i64;
-                let y1 = y0 + 1;
-                path_data.push_str(&format!(
-                    "M{},{}L{},{}L{},{}L{},{}Z",
-                    min_x.round() as i64, y0,
-                    max_x.round() as i64, y0,
-                    max_x.round() as i64, y1,
-                    min_x.round() as i64, y1,
-                ));
+            // Use pre-built SVG for thin stripe rects
+            if let Some(ref svg) = path.svg_override {
+                path_data.push_str(svg);
                 continue;
             }
-            // Thin vertical stripe: tall but near-zero width → emit as 1px rect
-            if w < 1.0 && h >= 2.0 {
-                let x0 = min_x.round() as i64;
-                let x1 = x0 + 1;
-                path_data.push_str(&format!(
-                    "M{},{}L{},{}L{},{}L{},{}Z",
-                    x0, min_y.round() as i64,
-                    x1, min_y.round() as i64,
-                    x1, max_y.round() as i64,
-                    x0, max_y.round() as i64,
-                ));
-                continue;
-            }
-            // Skip truly degenerate (tiny in both dimensions)
-            if w < 1.0 || h < 1.0 {
-                continue;
+            // Skip degenerate subpaths (zero-area in both dimensions)
+            if !path.curves.is_empty() {
+                let (min_x, min_y, max_x, max_y) = curve_bounds(&path.curves);
+                if (max_x - min_x) < 1.0 && (max_y - min_y) < 1.0 {
+                    continue;
+                }
             }
             path_data.push_str(&bezier_to_svg_path(&path.curves, true));
         }
@@ -366,7 +462,7 @@ fn group_by_color(paths: &[EnhancedPath]) -> Vec<ColorGroup> {
     let mut groups: Vec<ColorGroup> = Vec::new();
 
     for path in paths {
-        if path.curves.is_empty() {
+        if path.curves.is_empty() && path.svg_override.is_none() {
             continue;
         }
 
@@ -522,6 +618,74 @@ mod tests {
     }
 
     #[test]
+    fn test_edge_of_classification() {
+        assert_eq!(edge_of(&Point { x: 50.0, y: 0.0 }, 400.0, 400.0), 'T');
+        assert_eq!(edge_of(&Point { x: 50.0, y: 400.0 }, 400.0, 400.0), 'B');
+        assert_eq!(edge_of(&Point { x: 0.0, y: 50.0 }, 400.0, 400.0), 'L');
+        assert_eq!(edge_of(&Point { x: 400.0, y: 50.0 }, 400.0, 400.0), 'R');
+        assert_eq!(edge_of(&Point { x: 50.0, y: 50.0 }, 400.0, 400.0), ' ');
+        // Corner points: top edge takes priority over left/right
+        assert_eq!(edge_of(&Point { x: 0.0, y: 0.0 }, 400.0, 400.0), 'T');
+        assert_eq!(edge_of(&Point { x: 400.0, y: 0.0 }, 400.0, 400.0), 'T');
+    }
+
+    #[test]
+    fn test_dedup_consecutive() {
+        let pts = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 0.1, y: 0.1 }, // near-duplicate
+            Point { x: 10.0, y: 0.0 },
+            Point { x: 10.0, y: 10.0 },
+            Point { x: 10.0, y: 10.2 }, // near-duplicate
+        ];
+        let result = dedup_consecutive(&pts, 0.5);
+        assert_eq!(result.len(), 3); // (0,0), (10,0), (10,10)
+        assert!((result[0].x - 0.0).abs() < 0.01);
+        assert!((result[1].x - 10.0).abs() < 0.01);
+        assert!((result[2].y - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_inject_image_corners_right_to_top() {
+        // Contour goes along right edge then top edge → should inject (400,0)
+        let pts = vec![
+            Point { x: 200.0, y: 200.0 },
+            Point { x: 400.0, y: 200.0 }, // right edge
+            Point { x: 200.0, y: 0.0 },   // top edge
+        ];
+        let result = inject_image_corners(&pts, 400.0, 400.0);
+        // Should have injected (400,0) between right-edge and top-edge points
+        assert!(result.len() > 3);
+        let corner_found = result.iter().any(|p| (p.x - 400.0).abs() < 0.01 && p.y.abs() < 0.01);
+        assert!(corner_found, "Expected corner (400,0) to be injected");
+    }
+
+    #[test]
+    fn test_inject_image_corners_no_injection_for_same_edge() {
+        // Both points on same edge → no corner injection
+        let pts = vec![
+            Point { x: 100.0, y: 0.0 }, // top edge
+            Point { x: 200.0, y: 0.0 }, // top edge
+            Point { x: 200.0, y: 100.0 },
+        ];
+        let result = inject_image_corners(&pts, 400.0, 400.0);
+        assert_eq!(result.len(), 3); // no injection needed
+    }
+
+    #[test]
+    fn test_inject_image_corners_all_four() {
+        // Contour visits all 4 edges → should inject up to 4 corners
+        let pts = vec![
+            Point { x: 200.0, y: 0.0 },   // top
+            Point { x: 400.0, y: 200.0 },  // right
+            Point { x: 200.0, y: 400.0 },  // bottom
+            Point { x: 0.0, y: 200.0 },    // left
+        ];
+        let result = inject_image_corners(&pts, 400.0, 400.0);
+        assert!(result.len() >= 8, "Expected 4 original + 4 corners, got {}", result.len());
+    }
+
+    #[test]
     fn test_group_by_color() {
         let paths = vec![
             EnhancedPath {
@@ -533,6 +697,7 @@ mod tests {
                 }],
                 color: (255, 0, 0, 255),
                 area: 100,
+                svg_override: None,
             },
             EnhancedPath {
                 curves: vec![BezierCurve {
@@ -543,6 +708,7 @@ mod tests {
                 }],
                 color: (255, 0, 0, 255), // same color
                 area: 50,
+                svg_override: None,
             },
             EnhancedPath {
                 curves: vec![BezierCurve {
@@ -553,6 +719,7 @@ mod tests {
                 }],
                 color: (0, 0, 255, 255), // different color
                 area: 80,
+                svg_override: None,
             },
         ];
         let groups = group_by_color(&paths);

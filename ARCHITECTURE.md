@@ -81,10 +81,15 @@ PNG/JPEG → load_image → ImageData
          marching_squares_contours (shared with original pipeline, proven robust)
          ↓
          parallel per contour (rayon):
-           smooth_with_corners (Gaussian, corner-preserving)
-           → visvalingam_whyatt (area-based simplification, corner-preserving)
-           → snap_to_edges (boundary snapping)
-           → BezierFitter::fit_path (corner-aware splitting → cubic Bézier + Newton-Raphson)
+           thin stripe fast path (height/width < 2px → direct SVG rect via svg_override)
+           OR full pipeline:
+             smooth_with_corners (Gaussian, corner-preserving)
+             → visvalingam_whyatt (area-based simplification, corner-preserving)
+             → snap_to_edges (boundary snapping)
+             → inject_image_corners (insert 90° corner points at edge transitions)
+             → dedup_consecutive (remove near-duplicate points from snapping)
+             → BezierFitter::fit_path (corner-aware splitting → cubic Bézier + Newton-Raphson)
+             → clamp control points to image bounds
          ↓
          sort by area (back-to-front), detect_background_color (border pixels)
          ↓
@@ -130,6 +135,10 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **SVG L/C optimization**: Uses `L` for linear segments, `C` for true Bézier curves
 - **Distance-based collinear merge**: Merges consecutive `L` segments within 1.5px of a line
 - **Adaptive simplification**: 2× tolerance for photos (many colors), 1.5 for graphics
+- **Image corner injection**: Detects edge transitions after snapping, inserts exact 90° corner points
+- **Consecutive point dedup**: Removes near-duplicate points from snapping that break angle detection
+- **Thin stripe fast path**: Contours < 2px height/width → direct SVG rect via `svg_override`
+- **Adaptive smoothing passes**: 4 passes for complex graphics (17-1000 colors), 2 for photos
 
 ### Preprocessing Algorithms
 - **Bilateral filter**: Edge-preserving smoothing using spatial and color weights
