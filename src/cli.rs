@@ -37,4 +37,8 @@ pub struct Cli {
     /// Apply preprocessing (edge-preserving smoothing + color reduction) for photos
     #[arg(short = 'p', long)]
     pub preprocess: bool,
+
+    /// Use enhanced pipeline (Bézier curves, edge-aware quantization, flood-fill regions)
+    #[arg(short = 'e', long)]
+    pub enhanced: bool,
 }

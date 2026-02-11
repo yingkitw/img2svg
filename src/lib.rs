@@ -30,11 +30,21 @@ pub mod image_processor;
 pub mod svg_generator;
 pub mod vectorizer;
 pub mod preprocessor;
+pub mod edge_detector;
+pub mod enhanced_quantizer;
+pub mod region_extractor;
+pub mod path_simplifier;
+pub mod bezier_fitter;
+pub mod enhanced_vectorizer;
 
 pub use image_processor::{load_image, quantize_colors, ImageData};
 pub use svg_generator::{generate_svg, generate_svg_advanced};
 pub use vectorizer::{vectorize, Curve, Point, VectorizedData};
 pub use preprocessor::{preprocess, PreprocessOptions};
+pub use enhanced_vectorizer::{
+    vectorize_enhanced, generate_enhanced_svg, write_enhanced_svg,
+    EnhancedOptions, EnhancedVectorData, EnhancedPath,
+};
 pub use anyhow::Result;
 
 /// Options for image to SVG conversion

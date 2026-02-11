@@ -1,0 +1,7 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" fill="#ffffff"/>
+  <path d="M250.5 201L250.5 350L350 350.5L350.5 201L251 200.5Z" fill="#ffff00" stroke="none"/>
+  <path d="M200.5 51L201 150.5L350.5 150L350 50.5L201 50.5Z" fill="#0000ff" stroke="none"/>
+  <path d="M125 201L50.5 350.5L200 351L125.5 200.5Z" fill="#008000" stroke="none"/>
+  <path d="M93 50.5L74.5 57L62.5 67L51 88.5L50 106.5L57 126.5L67 138.5L88.5 150L106.5 151L126.5 144L138.5 134L150 112.5L151 94.5L144 74.5L134 62.5L112.5 51L93.5 50Z" fill="#ff0000" stroke="none"/>
+</svg>

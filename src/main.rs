@@ -3,11 +3,18 @@ mod image_processor;
 mod svg_generator;
 mod vectorizer;
 mod preprocessor;
+mod edge_detector;
+mod enhanced_quantizer;
+mod region_extractor;
+mod path_simplifier;
+mod bezier_fitter;
+mod enhanced_vectorizer;
 
 use anyhow::Result;
 use clap::Parser;
 use cli::Cli;
 use preprocessor::{preprocess, PreprocessOptions};
+use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -54,18 +61,38 @@ fn main() -> Result<()> {
         eprintln!();
     }
 
-    let vectorized_data = vectorizer::vectorize(
-        &image_data,
-        cli.colors,
-        cli.threshold,
-        cli.smooth,
-        cli.hierarchical,
-    )?;
-
-    if cli.advanced {
-        svg_generator::generate_svg_advanced(&vectorized_data, &output_path)?;
+    if cli.enhanced {
+        eprintln!("Using enhanced pipeline (Bézier curves, edge-aware quantization, flood-fill regions)...");
+        let options = EnhancedOptions {
+            num_colors: cli.colors,
+            // Enhanced pipeline auto-preprocesses photos by default (preprocess=true).
+            // CLI -p flag forces preprocessing even for non-photo images.
+            preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
+            ..Default::default()
+        };
+        let vector_data = vectorize_enhanced(&image_data, &options)?;
+        write_enhanced_svg(&vector_data, &output_path)?;
+        eprintln!(
+            "  {} paths, background #{:02x}{:02x}{:02x}",
+            vector_data.paths.len(),
+            vector_data.background_color.0,
+            vector_data.background_color.1,
+            vector_data.background_color.2,
+        );
     } else {
-        svg_generator::generate_svg(&vectorized_data, &output_path)?;
+        let vectorized_data = vectorizer::vectorize(
+            &image_data,
+            cli.colors,
+            cli.threshold,
+            cli.smooth,
+            cli.hierarchical,
+        )?;
+
+        if cli.advanced {
+            svg_generator::generate_svg_advanced(&vectorized_data, &output_path)?;
+        } else {
+            svg_generator::generate_svg(&vectorized_data, &output_path)?;
+        }
     }
 
     println!("Conversion complete!");

@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>img2svg Pipeline Comparison: Original vs Enhanced</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e; color: #e0e0e0; padding: 20px;
+  }
+  h1 { text-align: center; margin-bottom: 8px; color: #fff; font-size: 1.8em; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 30px; font-size: 0.95em; }
+  .legend {
+    display: flex; justify-content: center; gap: 30px; margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px; font-size: 0.9em;
+  }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+  }
+  .dot-original { background: #ff6b6b; }
+  .dot-enhanced { background: #4ecdc4; }
+  .dot-source { background: #ffd93d; }
+  .comparison-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px; margin-bottom: 32px; align-items: start;
+  }
+  .card {
+    background: #16213e; border-radius: 12px; overflow: hidden;
+    border: 1px solid #2a2a4a; transition: transform 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); border-color: #4ecdc4; }
+  .card-header {
+    padding: 10px 14px; font-weight: 600; font-size: 0.85em;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .card-header.source { background: #3d2e00; color: #ffd93d; }
+  .card-header.original { background: #3e1621; color: #ff6b6b; }
+  .card-header.enhanced { background: #0e3433; color: #4ecdc4; }
+  .card-body {
+    padding: 8px; background: #fff; min-height: 200px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card-body img, .card-body object {
+    max-width: 100%; max-height: 400px; display: block; margin: auto;
+  }
+  .card-footer {
+    padding: 8px 14px; font-size: 0.78em; color: #888;
+    display: flex; justify-content: space-between;
+  }
+  .section-title {
+    font-size: 1.3em; font-weight: 700; margin-bottom: 12px;
+    padding-left: 12px; border-left: 4px solid #4ecdc4; color: #fff;
+  }
+  .stats-table {
+    width: 100%; border-collapse: collapse; margin-bottom: 30px;
+    font-size: 0.88em;
+  }
+  .stats-table th {
+    background: #16213e; padding: 10px 14px; text-align: left;
+    border-bottom: 2px solid #4ecdc4; color: #4ecdc4;
+  }
+  .stats-table td {
+    padding: 8px 14px; border-bottom: 1px solid #2a2a4a;
+  }
+  .stats-table tr:hover td { background: #1a2744; }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.8em; font-weight: 600;
+  }
+  .tag-original { background: #3e1621; color: #ff6b6b; }
+  .tag-enhanced { background: #0e3433; color: #4ecdc4; }
+  .tag-better { background: #0e3e1a; color: #4ecd6b; }
+  .zoom-controls {
+    text-align: center; margin-bottom: 20px;
+  }
+  .zoom-controls button {
+    background: #16213e; color: #e0e0e0; border: 1px solid #4ecdc4;
+    padding: 6px 16px; border-radius: 6px; cursor: pointer; margin: 0 4px;
+    font-size: 0.85em;
+  }
+  .zoom-controls button:hover { background: #4ecdc4; color: #1a1a2e; }
+  .zoom-controls button.active { background: #4ecdc4; color: #1a1a2e; }
+  .checkerboard {
+    background-image:
+      linear-gradient(45deg, #ccc 25%, transparent 25%),
+      linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%),
+      linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  }
+  @media (max-width: 900px) {
+    .comparison-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>img2svg: Original vs Enhanced Pipeline</h1>
+<p class="subtitle">Visual comparison of vectorization quality. Enhanced pipeline uses Bézier curves, edge-aware k-means++ quantization, and marching-squares contour extraction.</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot dot-source"></div> Source PNG</div>
+  <div class="legend-item"><div class="legend-dot dot-original"></div> Original (marching squares + line segments)</div>
+  <div class="legend-item"><div class="legend-dot dot-enhanced"></div> Enhanced (k-means++ + Bézier curves)</div>
+</div>
+
+<div class="zoom-controls">
+  <button onclick="setZoom('fit')" class="active" id="btn-fit">Fit</button>
+  <button onclick="setZoom('100')" id="btn-100">100%</button>
+  <button onclick="setZoom('200')" id="btn-200">200%</button>
+  <button onclick="toggleBg()" id="btn-bg">Toggle Background</button>
+</div>
+
+<h2 class="section-title">Summary</h2>
+<table class="stats-table">
+  <thead>
+    <tr>
+      <th>Image</th>
+      <th>Source</th>
+      <th><span class="tag tag-original">Original</span> Size</th>
+      <th><span class="tag tag-enhanced">Enhanced</span> Size</th>
+      <th><span class="tag tag-enhanced">Enhanced</span> Paths</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>simple</strong></td>
+      <td>400x400, 5 colors</td>
+      <td>613 B</td>
+      <td>856 B</td>
+      <td>4</td>
+      <td>Rectangles sharp; circle smooth Bézier; triangle clean 3 edges</td>
+    </tr>
+    <tr>
+      <td><strong>medium</strong></td>
+      <td>400x400, 9 colors</td>
+      <td>1,321 B</td>
+      <td>2,039 B</td>
+      <td>10</td>
+      <td>Control points clamped to image bounds; smooth Bézier circles; clean edges</td>
+    </tr>
+    <tr>
+      <td><strong>complex</strong></td>
+      <td>400x400, many shapes</td>
+      <td>6,157 B</td>
+      <td>7,220 B</td>
+      <td>75</td>
+      <td>Similar size; smoother Bézier curves on all shapes; corners preserved</td>
+    </tr>
+    <tr>
+      <td><strong>very_complex</strong></td>
+      <td>400x400, 100+ shapes</td>
+      <td>12,941 B</td>
+      <td>8,201 B</td>
+      <td>151</td>
+      <td><span class="tag tag-better">0.6×!</span> Thin stripes → 1px rects; colored shapes preserved</td>
+    </tr>
+    <tr>
+      <td><strong>gradient</strong></td>
+      <td>400x400, smooth gradient</td>
+      <td>1,577 B</td>
+      <td>2,175 B</td>
+      <td>17</td>
+      <td>Smoother color banding with perceptual distance; edge-aware quantization</td>
+    </tr>
+    <tr>
+      <td><strong>lenna</strong></td>
+      <td>512x512, photograph</td>
+      <td>89,452 B</td>
+      <td>46,354 B</td>
+      <td>319</td>
+      <td><span class="tag tag-better">0.5×!</span> Auto-preprocessed (bilateral filter); perceptual k-means++; smooth Bézier</td>
+    </tr>
+  </tbody>
+</table>
+
+<script>
+const images = ['simple', 'medium', 'complex', 'very_complex', 'gradient', 'lenna'];
+const descriptions = {
+  simple: 'Basic geometric shapes with solid colors',
+  medium: 'Multiple overlapping shapes with varied colors',
+  complex: 'Many shapes, patterns, and color variations',
+  very_complex: 'High detail with many color transitions',
+  gradient: 'Smooth color gradient transitions',
+  lenna: 'Classic photograph — tests photo vectorization quality'
+};
+
+const container = document.createElement('div');
+container.id = 'comparisons';
+document.body.appendChild(container);
+
+images.forEach(name => {
+  const section = document.createElement('div');
+  section.innerHTML = `
+    <h2 class="section-title">${name}.png <span style="font-weight:400;font-size:0.7em;color:#888">- ${descriptions[name]}</span></h2>
+    <div class="comparison-row">
+      <div class="card">
+        <div class="card-header source">Source PNG</div>
+        <div class="card-body checkerboard svg-container">
+          <img src="input/${name}.png" alt="${name} source">
+        </div>
+        <div class="card-footer"><span>input/${name}.png</span></div>
+      </div>
+      <div class="card">
+        <div class="card-header original">Original Pipeline</div>
+        <div class="card-body checkerboard svg-container">
+          <img src="output/original/${name}.svg" alt="${name} original SVG">
+        </div>
+        <div class="card-footer"><span>Line segments, marching squares</span><span class="tag tag-original">original</span></div>
+      </div>
+      <div class="card">
+        <div class="card-header enhanced">Enhanced Pipeline</div>
+        <div class="card-body checkerboard svg-container">
+          <img src="output/enhanced/${name}.svg" alt="${name} enhanced SVG">
+        </div>
+        <div class="card-footer"><span>Bezier curves, flood-fill, edge-aware</span><span class="tag tag-enhanced">enhanced</span></div>
+      </div>
+    </div>
+  `;
+  container.appendChild(section);
+});
+
+function setZoom(level) {
+  document.querySelectorAll('.zoom-controls button').forEach(b => b.classList.remove('active'));
+  const containers = document.querySelectorAll('.svg-container');
+  containers.forEach(c => {
+    const el = c.querySelector('img, object');
+    if (!el) return;
+    if (level === 'fit') {
+      el.style.maxWidth = '100%';
+      el.style.width = '';
+    } else if (level === '100') {
+      el.style.maxWidth = 'none';
+      el.style.width = '400px';
+    } else if (level === '200') {
+      el.style.maxWidth = 'none';
+      el.style.width = '800px';
+    }
+  });
+  document.getElementById('btn-' + level).classList.add('active');
+}
+
+let bgWhite = true;
+function toggleBg() {
+  bgWhite = !bgWhite;
+  document.querySelectorAll('.card-body').forEach(c => {
+    if (bgWhite) {
+      c.style.background = '#fff';
+      c.classList.add('checkerboard');
+    } else {
+      c.style.background = '#333';
+      c.classList.remove('checkerboard');
+    }
+  });
+}
+</script>
+
+<div style="text-align:center;margin-top:40px;padding:20px;color:#666;font-size:0.85em;">
+  <p>Generated by img2svg. Original: marching squares + RDP + line segments. Enhanced: k-means++ + edge-aware quantization + marching squares + Visvalingam-Whyatt + cubic Bézier + L/C optimization.</p>
+  <p style="margin-top:8px;">Usage: <code style="background:#16213e;padding:2px 8px;border-radius:4px;">img2svg -i input.png -o output.svg</code> (original) | <code style="background:#16213e;padding:2px 8px;border-radius:4px;">img2svg -i input.png -o output.svg -e</code> (enhanced)</p>
+</div>
+
+</body>
+</html>

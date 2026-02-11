@@ -7,11 +7,17 @@ src/
 ├── main.rs                 # CLI entry point, orchestrates pipeline
 ├── cli.rs                  # Clap-based argument parsing
 ├── lib.rs                  # Library API with public exports
-├── image_processor.rs      # Image loading, median-cut color quantization
-├── vectorizer.rs           # Marching-squares contour tracing, smoothing, simplification
-├── svg_generator.rs        # SVG file generation with merged subpaths per color
+├── image_processor.rs      # Image loading, median-cut color quantization (original)
+├── vectorizer.rs           # Marching-squares contour tracing, smoothing, RDP (original)
+├── svg_generator.rs        # SVG file generation with merged subpaths per color (original)
 ├── preprocessor.rs         # Image preprocessing (bilateral filter, color reduction)
 ├── mcp.rs                  # MCP (Model Context Protocol) server
+├── edge_detector.rs        # Sobel edge detection (enhanced pipeline)
+├── enhanced_quantizer.rs   # K-means++ / k-means refinement, edge-aware quantization (enhanced)
+├── region_extractor.rs     # 8-connectivity flood-fill, Moore contour tracing (enhanced)
+├── path_simplifier.rs      # Visvalingam-Whyatt with corner preservation (enhanced)
+├── bezier_fitter.rs        # Cubic Bézier fitting with Newton-Raphson (enhanced)
+├── enhanced_vectorizer.rs  # Enhanced pipeline orchestrator (enhanced)
 └── *_tests.rs              # Unit tests for each module
 
 tests/
@@ -58,6 +64,33 @@ PNG/JPEG → load_image → ImageData
          generate_svg → background rect + one <path> per color
 ```
 
+### Enhanced Pipeline (--enhanced flag)
+```
+PNG/JPEG → load_image → ImageData
+         ↓
+         [Auto: detect unique colors, adaptive color count (256/128/64)]
+         ↓
+         [Optional: bilateral_filter (edge-preserving smoothing)]
+         ↓
+         detect_edges_sobel → EdgeMap (Sobel gradient magnitudes)
+         ↓
+         quantize_edge_aware (k-means++ init → k-means refine → majority-vote smoothing)
+         ↓
+         group pixels by quantized color → per-color binary mask
+         ↓
+         marching_squares_contours (shared with original pipeline, proven robust)
+         ↓
+         parallel per contour (rayon):
+           smooth_with_corners (Gaussian, corner-preserving)
+           → visvalingam_whyatt (area-based simplification, corner-preserving)
+           → snap_to_edges (boundary snapping)
+           → BezierFitter::fit_path (corner-aware splitting → cubic Bézier + Newton-Raphson)
+         ↓
+         sort by area (back-to-front), detect_background_color (border pixels)
+         ↓
+         generate_enhanced_svg → L for lines, C for curves, collinear merge, gap-filling strokes
+```
+
 ### Preprocessing Pipeline (for photographs)
 ```
 ImageData → bilateral_filter (edge-preserving smoothing)
@@ -66,18 +99,37 @@ ImageData → bilateral_filter (edge-preserving smoothing)
          ↓
          ImageData (cleaner regions, less noise)
          ↓
-         [continues to standard pipeline]
+         [continues to standard or enhanced pipeline]
 ```
 
 ## Key Algorithms
 
-### Core Algorithms
+### Original Pipeline Algorithms
 - **Median-cut quantization**: Recursively splits color space along widest channel
 - **Marching squares**: Traces sub-pixel contours on binary mask per color
 - **Gaussian smoothing**: Neighbor averaging that preserves point count
 - **RDP simplification**: Ramer-Douglas-Peucker with epsilon=2.0
 - **Background detection**: Largest-area color becomes SVG rect (not traced)
 - **Subpath merging**: All contours of same color → single `<path>` with `M...Z` subpaths
+
+### Enhanced Pipeline Algorithms (merged from vec project)
+- **K-means++ initialization**: Probabilistic centroid selection proportional to distance²
+- **K-means refinement**: 8 iterations with perceptual color distance (R=2, G=4, B=3)
+- **Sobel edge detection**: Gradient-based edge map for edge-aware quantization
+- **Edge-aware quantization**: Majority-vote smoothing on non-edge pixels (3×3 window, 2 passes)
+- **Marching squares contours**: Shared with original pipeline for robust sub-pixel contour extraction
+- **Corner-aware Bézier splitting**: 30° turn threshold detects sharp corners from marching squares chamfers
+- **Visvalingam-Whyatt simplification**: Area-based point removal with corner preservation
+- **Harris-like corner detection**: Multi-scale corner response with non-maximum suppression
+- **Cubic Bézier fitting**: Least-squares fit with Newton-Raphson reparameterization
+- **G1 continuity**: Smooth tangent transitions between adjacent Bézier curves
+- **Control point clamping**: Prevents overshoot beyond data bounds (15% margin)
+- **Gap-filling strokes**: Thin stroke matching fill color eliminates visible seams
+- **Color grouping**: Consecutive same-color paths merged into compound paths
+- **Border background detection**: Most frequent color along image border pixels
+- **SVG L/C optimization**: Uses `L` for linear segments, `C` for true Bézier curves
+- **Distance-based collinear merge**: Merges consecutive `L` segments within 1.5px of a line
+- **Adaptive simplification**: 2× tolerance for photos (many colors), 1.5 for graphics
 
 ### Preprocessing Algorithms
 - **Bilateral filter**: Edge-preserving smoothing using spatial and color weights
@@ -127,6 +179,8 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 - `rgb` (0.8) — RGBA8 pixel type
 - `anyhow` — Error handling
 - `thiserror` — Error derive macros
+- `rayon` (1.10) — Parallel path processing (enhanced pipeline)
+- `rand` (0.8) — K-means++ random centroid selection (enhanced pipeline)
 
 ### Test Dependencies
 - (dev-dependencies only)

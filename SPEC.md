@@ -12,6 +12,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--preprocess` / `-p`: Apply edge-preserving smoothing and color reduction
   - `--hierarchical`: Enable hierarchical decomposition
   - `--advanced` / `-a`: Use advanced SVG generation
+  - `--enhanced` / `-e`: Use enhanced pipeline (Bézier curves, edge-aware quantization, flood-fill)
 
 ## Output
 - SVG file with filled `<path>` elements representing color regions
@@ -21,7 +22,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 
 ## Pipeline
 
-### Standard Pipeline
+### Standard Pipeline (default)
 1. **Load** → `image_processor::load_image` → `ImageData { width, height, pixels: Vec<RGBA8> }`
 2. **[Optional] Preprocess** → `preprocessor::preprocess` → Bilateral filter + color reduction
 3. **Quantize** → `image_processor::quantize_colors` → Median-cut algorithm
@@ -30,6 +31,19 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 6. **Smooth** → `vectorizer::smooth_boundary` → Gaussian neighbor averaging
 7. **Simplify** → `vectorizer::rdp_simplify` → Ramer-Douglas-Peucker with epsilon=2.0
 8. **SVG emit** → `svg_generator::generate_svg` → Background rect + merged line-segment paths
+
+### Enhanced Pipeline (--enhanced flag)
+1. **Load** → `image_processor::load_image` → `ImageData`
+2. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
+3. **[Optional] Preprocess** → Bilateral filter for photos (auto-detected)
+4. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
+5. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine → majority-vote smoothing
+6. **Extract** → `region_extractor::extract_regions_by_index` → 8-connectivity flood-fill → Moore contour tracing
+7. **[Optional] Recolor** → `region_extractor::recolor_from_original` → Sample original image for true colors
+8. **[Parallel] Smooth** → `path_simplifier::smooth_with_corners` → Gaussian smoothing preserving corners
+9. **[Parallel] Simplify** → `path_simplifier::visvalingam_whyatt` → Area-based simplification with corner preservation
+10. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with Newton-Raphson + G1 continuity
+11. **SVG emit** → `enhanced_vectorizer::generate_enhanced_svg` → Background rect + gap-filling strokes + color grouping
 
 ### Preprocessing Mode (--preprocess)
 Applied before quantization for photographs:

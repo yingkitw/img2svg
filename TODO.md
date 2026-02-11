@@ -38,6 +38,32 @@
 - [x] Color reduction (posterization) for cleaner regions
 - [x] --preprocess CLI flag
 
+### Enhanced Pipeline (merged from vec project)
+- [x] K-means++ initialization + k-means refinement (8 iterations) for better palette
+- [x] Perceptual color distance weighting (R=2, G=4, B=3)
+- [x] Sobel edge detection for edge-aware quantization
+- [x] Edge-aware quantization with majority-vote smoothing (multi-pass, 3×3 window)
+- [x] Marching-squares contour extraction (shared with original pipeline, proven robust)
+- [x] Corner-aware Bézier fitting (30° threshold detects sharp turns from marching squares)
+- [x] Visvalingam-Whyatt simplification with corner preservation (replaces RDP-only)
+- [x] Cubic Bézier fitting with Newton-Raphson reparameterization (replaces line segments)
+- [x] G1 continuity enforcement between adjacent curves
+- [x] Control point clamping to prevent overshoot
+- [x] Gap-filling strokes + consecutive same-color path grouping in SVG output
+- [x] Border-pixel frequency background detection (replaces largest-area)
+- [x] Recoloring from original image for true color accuracy
+- [x] Adaptive color count based on image size (256/128/64)
+- [x] Rayon parallel path processing (smooth → simplify → Bézier fit)
+- [x] --enhanced CLI flag to select new pipeline (original preserved for comparison)
+- [x] 50+ new unit tests for enhanced modules
+- [x] SVG size optimization: L for linear curves, C for true Bézier, collinear L merge
+- [x] Distance-based collinear merge catches diagonal staircases from marching squares
+- [x] Adaptive simplification tolerance (2x for photos, 1.5 for graphics)
+- [x] Visual comparison page with lenna.png, 6 test images total
+- [x] Control point clamping to image bounds (fixes corner bulging in medium.png)
+- [x] Degenerate thin-line path filtering (fixes very_complex.png bloat)
+- [x] Auto-preprocessing for photos in enhanced pipeline (bilateral filter + color reduction)
+
 ## Pending 🚧
 
 ### Core Features
@@ -45,7 +71,6 @@
 - [ ] Add hierarchical decomposition mode (flag exists, implementation incomplete)
 - [ ] SVG gradient detection for smoother gradient rendering
 - [ ] Support for CMYK color space input
-- [ ] Multi-threaded processing for large images
 
 ### Performance
 - [ ] Optimize memory usage for large images (>4K)
@@ -66,7 +91,7 @@
 ### Documentation
 - [ ] API reference documentation (rustdoc for all public functions)
 - [ ] More example images demonstrating different use cases
-- [ ] Performance benchmarks comparing different parameter combinations
+- [ ] Performance benchmarks comparing original vs enhanced pipeline
 
 ### Advanced Features
 - [ ] Superpixel segmentation as alternative to color quantization

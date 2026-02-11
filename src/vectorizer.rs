@@ -128,7 +128,7 @@ pub fn vectorize(
 /// Produces sub-pixel contours at the boundary between true/false cells.
 /// The grid has (width+1) x (height+1) vertices; each cell (x,y) corresponds
 /// to pixel (x,y). A cell is "inside" if mask[y*width+x] is true.
-fn marching_squares_contours(
+pub fn marching_squares_contours(
     mask: &[bool],
     width: usize,
     height: usize,
