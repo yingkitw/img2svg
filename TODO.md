@@ -66,6 +66,10 @@
 - [x] Consecutive point dedup after snapping (fixes fitter angle detection at image corners)
 - [x] Thin stripe fast path: contours < 2px height/width → direct SVG rect via svg_override
 - [x] Adaptive majority-vote smoothing (4 passes for complex graphics, 2 for photos)
+- [x] Batch directory processing (`-i <dir> -o <dir>`)
+- [x] Large image auto-resize (`--max-size`, default 4096, Lanczos3)
+- [x] Recoloring from original image (average original pixels per quantized region)
+- [x] Fast LUT-based bilateral filter (precomputed range-weight LUT, fixed-point arithmetic)
 
 ## Pending 🚧
 
@@ -76,7 +80,6 @@
 - [ ] Support for CMYK color space input
 
 ### Performance
-- [ ] Optimize memory usage for large images (>4K)
 - [ ] Progress logging for large image conversions
 - [ ] Incremental SVG generation for memory-constrained environments
 
@@ -84,7 +87,6 @@
 - [ ] Test JPEG, WebP, BMP input formats thoroughly
 - [ ] SVG optimization (remove redundant points, merge adjacent paths)
 - [ ] Support for animated GIF input
-- [ ] Batch conversion mode from CLI
 
 ### MCP Server
 - [ ] Add streaming file reading for large images

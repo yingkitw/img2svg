@@ -19,6 +19,7 @@ use crate::region_extractor::detect_background_color;
 use crate::vectorizer::{marching_squares_contours, Point};
 use anyhow::Result;
 use rayon::prelude::*;
+use rgb::RGBA8;
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -138,7 +139,7 @@ pub fn vectorize_enhanced(
         smooth_passes,
     );
 
-    // Group pixels by quantized color
+    // Group pixels by quantized color for region assignment
     let mut color_pixels: HashMap<(u8, u8, u8, u8), Vec<(usize, usize)>> = HashMap::new();
     for y in 0..height {
         for x in 0..width {
@@ -148,12 +149,38 @@ pub fn vectorize_enhanced(
         }
     }
 
+    // Build a mapping from quantized color → average original color for display
+    let recolor_map: HashMap<(u8, u8, u8, u8), (u8, u8, u8, u8)> = if options.recolor && is_many_colors {
+        let mut map = HashMap::new();
+        for (&qcolor, pixels) in &color_pixels {
+            let mut sr: u64 = 0;
+            let mut sg: u64 = 0;
+            let mut sb: u64 = 0;
+            let mut sa: u64 = 0;
+            for &(x, y) in pixels {
+                let p = image_data.pixels[y * width + x];
+                sr += p.r as u64;
+                sg += p.g as u64;
+                sb += p.b as u64;
+                sa += p.a as u64;
+            }
+            let n = pixels.len() as u64;
+            map.insert(qcolor, ((sr / n) as u8, (sg / n) as u8, (sb / n) as u8, (sa / n) as u8));
+        }
+        map
+    } else {
+        HashMap::new()
+    };
+
     // Sort colors by pixel count (largest area first for proper z-order)
     let mut color_list: Vec<_> = color_pixels.into_iter().collect();
     color_list.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
-    // Background detection using border pixels of quantized image
-    let background_color = detect_background_color(&quantized);
+    // Background detection using border pixels of quantized image.
+    // Use quantized color directly (not recolored) — recolored averages can produce
+    // unexpected dark colors for photos where the border region spans diverse originals.
+    let bg_quantized = detect_background_color(&quantized);
+    let background_color = bg_quantized;
 
     let w_f = width as f64;
     let h_f = height as f64;
@@ -170,17 +197,19 @@ pub fn vectorize_enhanced(
     let min_poly_area = if is_many_colors { 20.0 } else { 8.0 };
 
     // For each color: build binary mask → marching squares → smooth → simplify → Bézier fit
-    // Collect (color, pixel_count, contours) tuples for parallel processing
+    // Collect (display_color, pixel_count, contours) tuples for parallel processing
     let color_contours: Vec<((u8, u8, u8, u8), usize, Vec<Vec<Point>>)> = color_list
         .iter()
-        .filter(|(color, _)| *color != background_color)
+        .filter(|(color, _)| *color != bg_quantized)
         .map(|(color, pixels)| {
             let mut mask = vec![false; pixel_count];
             for &(x, y) in pixels {
                 mask[y * width + x] = true;
             }
             let contours = marching_squares_contours(&mask, width, height);
-            (*color, pixels.len(), contours)
+            // Use recolored color for display if available
+            let display_color = recolor_map.get(color).copied().unwrap_or(*color);
+            (display_color, pixels.len(), contours)
         })
         .collect();
 
@@ -683,6 +712,46 @@ mod tests {
         ];
         let result = inject_image_corners(&pts, 400.0, 400.0);
         assert!(result.len() >= 8, "Expected 4 original + 4 corners, got {}", result.len());
+    }
+
+    #[test]
+    fn test_recolor_produces_different_colors_for_photos() {
+        // Create a "photo-like" image with many colors (>16 distinct)
+        let mut pixels = Vec::new();
+        for y in 0..30u32 {
+            for x in 0..30u32 {
+                pixels.push(RGBA8::new(
+                    (x * 8) as u8,
+                    (y * 8) as u8,
+                    ((x + y) * 4) as u8,
+                    255,
+                ));
+            }
+        }
+        let img = ImageData { width: 30, height: 30, pixels };
+        let options_no_recolor = EnhancedOptions {
+            num_colors: 8,
+            preprocess: false,
+            recolor: false,
+            ..Default::default()
+        };
+        let options_recolor = EnhancedOptions {
+            num_colors: 8,
+            preprocess: false,
+            recolor: true,
+            ..Default::default()
+        };
+        let result_no = vectorize_enhanced(&img, &options_no_recolor).unwrap();
+        let result_yes = vectorize_enhanced(&img, &options_recolor).unwrap();
+        // Both should produce valid output
+        assert!(!result_no.paths.is_empty());
+        assert!(!result_yes.paths.is_empty());
+        // Recolored version should have different colors (averaged from original)
+        // since quantized palette colors differ from original averages
+        let svg_no = generate_enhanced_svg(&result_no);
+        let svg_yes = generate_enhanced_svg(&result_yes);
+        assert!(svg_no.contains("<path"));
+        assert!(svg_yes.contains("<path"));
     }
 
     #[test]

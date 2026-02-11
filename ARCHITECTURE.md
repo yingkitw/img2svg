@@ -4,13 +4,13 @@
 
 ```
 src/
-├── main.rs                 # CLI entry point, orchestrates pipeline
-├── cli.rs                  # Clap-based argument parsing
+├── main.rs                 # CLI entry point, single-file + batch mode orchestration
+├── cli.rs                  # Clap-based argument parsing, is_supported_image()
 ├── lib.rs                  # Library API with public exports
-├── image_processor.rs      # Image loading, median-cut color quantization (original)
+├── image_processor.rs      # Image loading, auto-resize (Lanczos3), median-cut quantization
 ├── vectorizer.rs           # Marching-squares contour tracing, smoothing, RDP (original)
 ├── svg_generator.rs        # SVG file generation with merged subpaths per color (original)
-├── preprocessor.rs         # Image preprocessing (bilateral filter, color reduction)
+├── preprocessor.rs         # Image preprocessing (LUT bilateral filter, color reduction)
 ├── mcp.rs                  # MCP (Model Context Protocol) server
 ├── edge_detector.rs        # Sobel edge detection (enhanced pipeline)
 ├── enhanced_quantizer.rs   # K-means++ / k-means refinement, edge-aware quantization (enhanced)
@@ -64,17 +64,21 @@ PNG/JPEG → load_image → ImageData
          generate_svg → background rect + one <path> per color
 ```
 
-### Enhanced Pipeline (--enhanced flag)
+### Default Pipeline (Bézier curves)
 ```
 PNG/JPEG → load_image → ImageData
          ↓
+         resize_if_needed (Lanczos3 downscale if > --max-size)
+         ↓
          [Auto: detect unique colors, adaptive color count (256/128/64)]
          ↓
-         [Optional: bilateral_filter (edge-preserving smoothing)]
+         [Optional: LUT bilateral_filter (edge-preserving smoothing)]
          ↓
          detect_edges_sobel → EdgeMap (Sobel gradient magnitudes)
          ↓
          quantize_edge_aware (k-means++ init → k-means refine → majority-vote smoothing)
+         ↓
+         recolor_from_original (average original pixels per quantized region)
          ↓
          group pixels by quantized color → per-color binary mask
          ↓
@@ -140,11 +144,17 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Thin stripe fast path**: Contours < 2px height/width → direct SVG rect via `svg_override`
 - **Adaptive smoothing passes**: 4 passes for complex graphics (17-1000 colors), 2 for photos
 
+### New Features (merged from vec project)
+- **Batch directory processing**: `img2svg -i dir/ -o out/` converts all supported images
+- **Auto-resize**: Lanczos3 downscale for images exceeding `--max-size` (default 4096)
+- **Original recoloring**: Each quantized region recolored with average original pixel color
+- **LUT bilateral filter**: Precomputed range-weight LUT with fixed-point arithmetic (radius=2)
+
 ### Preprocessing Algorithms
-- **Bilateral filter**: Edge-preserving smoothing using spatial and color weights
-  - Spatial kernel: Gaussian based on pixel distance
-  - Color kernel: Gaussian based on color similarity
-  - Preserves edges while smoothing flat areas
+- **LUT Bilateral filter**: Fast edge-preserving smoothing
+  - Precomputed 256-bin range weight LUT (fixed-point 10-bit)
+  - Radius 2, color sigma configurable
+  - Much faster than naive Gaussian bilateral (no exp() in hot loop)
 - **Color reduction**: Posterization to reduce color noise
   - Quantizes each channel to fewer levels
   - Creates larger, more uniform color regions
@@ -210,6 +220,7 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 - SVG output: O(c + t) where c = number of colors, t = total path points
 
 ### Scalability
-- Tested up to 4K resolution (4096x4096)
-- Memory efficient: streams well, suitable for large images
+- Auto-resize for images > 4096px (configurable via `--max-size`)
+- Batch mode for directory processing
+- Memory efficient: auto-resize prevents OOM on very large images
 - Typical 1000x1000 image converts in <1 second

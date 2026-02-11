@@ -33,8 +33,11 @@ Converting raster images to vector format is essential for:
 2. **Edge-Aware Quantization**: K-means++ with perceptual color distance and Sobel edge detection
 3. **Sub-pixel Accuracy**: Marching squares contour extraction with corner-aware path splitting
 4. **Smart SVG Output**: `L` for lines, `C` for curves, collinear merge, thin stripe fast path
-5. **Auto Photo Preprocessing**: Bilateral filter + color reduction for photographs
-6. **Flexible Usage**: CLI tool, Rust library, and MCP server
+5. **Original Color Recoloring**: Regions recolored from original image for richer photo fidelity
+6. **Batch Processing**: Convert entire directories with `img2svg -i dir/ -o out/`
+7. **Large Image Safety**: Auto-resize images exceeding `--max-size` to prevent OOM
+8. **Fast LUT Bilateral Filter**: Precomputed range-weight LUT with fixed-point arithmetic
+9. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Examples & Quality
 
@@ -185,18 +188,20 @@ img2svg -i logo.png -o logo.svg -c 32 -s 7
 # Simple logo with fewer colors
 img2svg -i icon.png -o icon.svg -c 8 -s 2
 
-# Batch convert multiple files
-for img in *.png; do
-    img2svg -i "$img" -o "${img%.png}.svg"
-done
+# Batch convert all images in a directory
+img2svg -i images/ -o svgs/
+
+# Limit max dimension for very large images (default: 4096)
+img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 ```
 
 ### Options
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--input` | `-i` | *required* | Input image file (PNG, JPEG, etc.) |
-| `--output` | `-o` | auto | Output SVG file (defaults to input with .svg extension) |
+| `--input` | `-i` | *required* | Input image file or directory (batch mode) |
+| `--output` | `-o` | auto | Output SVG file or directory |
+| `--max-size` | | 4096 | Auto-resize images exceeding this dimension (prevents OOM) |
 | `--preprocess` | `-p` | false | Apply edge-preserving smoothing and color reduction (great for photos) |
 | `--colors` | `-c` | 16 | Number of colors for quantization (1-64) |
 | `--threshold` | `-t` | 0.1 | Edge detection threshold (0.0-1.0) |
@@ -296,16 +301,18 @@ The MCP server provides one tool:
 
 img2svg uses a sophisticated multi-stage pipeline (default Bézier pipeline):
 
-1. **Edge Detection**: Sobel gradient for edge-aware quantization boundaries
-2. **Color Quantization**: K-means++ initialization + k-means refinement with perceptual color distance
-3. **Majority-Vote Smoothing**: Edge-aware smoothing merges thin artifacts (adaptive: 4 passes for graphics, 2 for photos)
-4. **Contour Tracing**: Marching squares on per-color binary masks produces sub-pixel-accurate boundaries
-5. **Thin Stripe Fast Path**: Contours < 2px → direct SVG rectangles (preserves line patterns)
-6. **Corner-Preserving Smoothing**: Gaussian smoothing that preserves sharp corners
-7. **Visvalingam-Whyatt Simplification**: Area-based point removal with corner preservation
-8. **Edge Snapping + Corner Injection**: Points snapped to image edges; 90° corners injected at edge transitions
-9. **Cubic Bézier Fitting**: Least-squares fit with Newton-Raphson reparameterization + G1 continuity
-10. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes
+1. **LUT Bilateral Filter**: Fast edge-preserving blur with precomputed range-weight LUT (two-pass for photos)
+2. **Edge Detection**: Sobel gradient for edge-aware quantization boundaries
+3. **Color Quantization**: K-means++ initialization + k-means refinement with perceptual color distance
+4. **Majority-Vote Smoothing**: Edge-aware smoothing merges thin artifacts (adaptive: 4 passes for graphics, 2 for photos)
+5. **Original Recoloring**: Each quantized region recolored with average original pixel color for richer fidelity
+6. **Contour Tracing**: Marching squares on per-color binary masks produces sub-pixel-accurate boundaries
+7. **Thin Stripe Fast Path**: Contours < 2px → direct SVG rectangles (preserves line patterns)
+8. **Corner-Preserving Smoothing**: Gaussian smoothing that preserves sharp corners
+9. **Visvalingam-Whyatt Simplification**: Area-based point removal with corner preservation
+10. **Edge Snapping + Corner Injection**: Points snapped to image edges; 90° corners injected at edge transitions
+11. **Cubic Bézier Fitting**: Least-squares fit with Newton-Raphson reparameterization + G1 continuity
+12. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes
 
 The original pipeline (`--original`) uses median-cut quantization, RDP simplification, and line-segment SVG paths.
 
@@ -314,8 +321,9 @@ The original pipeline (`--original`) uses median-cut quantization, RDP simplific
 img2svg is optimized for speed and memory:
 
 - **Speed**: Typical 1000x1000 image converts in <1 second
-- **Memory**: Efficient streaming processing, suitable for large images
-- **Parallelization**: Color quantization can be parallelized for large palettes
+- **Memory**: Auto-resize for large images (configurable `--max-size`, default 4096)
+- **Parallelization**: Rayon parallel path processing (smooth → simplify → Bézier fit)
+- **Batch Mode**: Convert entire directories in one command
 
 Benchmarks (1000x1000px image):
 

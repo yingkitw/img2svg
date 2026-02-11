@@ -207,4 +207,39 @@ mod tests {
         assert!(!right.is_empty());
         assert_eq!(left.len() + right.len(), 4);
     }
+
+    #[test]
+    fn test_resize_if_needed_no_resize() {
+        let img = create_solid_color_image(100, 100, RGBA8::new(128, 128, 128, 255));
+        let result = resize_if_needed(img, 4096);
+        assert_eq!(result.width, 100);
+        assert_eq!(result.height, 100);
+    }
+
+    #[test]
+    fn test_resize_if_needed_downscale() {
+        let img = create_solid_color_image(200, 100, RGBA8::new(255, 0, 0, 255));
+        let result = resize_if_needed(img, 50);
+        // 200x100 scaled to fit 50x50 → scale = 50/200 = 0.25 → 50x25
+        assert_eq!(result.width, 50);
+        assert_eq!(result.height, 25);
+        assert_eq!(result.pixels.len(), 50 * 25);
+    }
+
+    #[test]
+    fn test_resize_if_needed_preserves_aspect_ratio() {
+        let img = create_solid_color_image(300, 600, RGBA8::new(0, 255, 0, 255));
+        let result = resize_if_needed(img, 100);
+        // 300x600 → scale = 100/600 = 0.1667 → 50x100
+        assert_eq!(result.width, 50);
+        assert_eq!(result.height, 100);
+    }
+
+    #[test]
+    fn test_resize_if_needed_exact_boundary() {
+        let img = create_solid_color_image(4096, 4096, RGBA8::new(0, 0, 0, 255));
+        let result = resize_if_needed(img, 4096);
+        assert_eq!(result.width, 4096);
+        assert_eq!(result.height, 4096);
+    }
 }

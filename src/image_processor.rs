@@ -24,6 +24,47 @@ pub fn load_image(path: &std::path::Path) -> Result<ImageData> {
     })
 }
 
+/// Resize image if either dimension exceeds max_size, maintaining aspect ratio.
+/// Uses Lanczos3 for high-quality downscaling.
+pub fn resize_if_needed(image_data: ImageData, max_size: u32) -> ImageData {
+    let (w, h) = (image_data.width, image_data.height);
+    if w <= max_size && h <= max_size {
+        return image_data;
+    }
+
+    let scale = (max_size as f64 / w as f64).min(max_size as f64 / h as f64);
+    let new_w = (w as f64 * scale).round() as u32;
+    let new_h = (h as f64 * scale).round() as u32;
+
+    eprintln!(
+        "  Auto-resizing {}x{} -> {}x{} (max_size={})",
+        w, h, new_w, new_h, max_size
+    );
+
+    // Convert to image::RgbaImage for resizing
+    let mut rgba_img = image::RgbaImage::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            let idx = (y * w + x) as usize;
+            let p = image_data.pixels[idx];
+            rgba_img.put_pixel(x, y, image::Rgba([p.r, p.g, p.b, p.a]));
+        }
+    }
+
+    let resized = image::imageops::resize(&rgba_img, new_w, new_h, image::imageops::FilterType::Lanczos3);
+
+    let pixels: Vec<RGBA8> = resized
+        .pixels()
+        .map(|p| RGBA8::new(p[0], p[1], p[2], p[3]))
+        .collect();
+
+    ImageData {
+        width: new_w,
+        height: new_h,
+        pixels,
+    }
+}
+
 /// Median-cut color quantization for better color space coverage.
 pub fn quantize_colors(image_data: &ImageData, num_colors: usize) -> Result<ImageData> {
     if num_colors == 0 {

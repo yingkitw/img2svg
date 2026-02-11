@@ -378,9 +378,17 @@ pub fn detect_background_color(
         sample_border(w - 1, y);
     }
 
+    // Deterministic tie-breaking: highest count wins; on tie, prefer lighter color
+    // (lighter colors are more common backgrounds). Uses luminance as tie-breaker.
     color_counts
         .values()
-        .max_by_key(|(count, _)| *count)
+        .max_by(|(count_a, ca), (count_b, cb)| {
+            count_a.cmp(count_b).then_with(|| {
+                let lum_a = ca.0 as u32 * 299 + ca.1 as u32 * 587 + ca.2 as u32 * 114;
+                let lum_b = cb.0 as u32 * 299 + cb.1 as u32 * 587 + cb.2 as u32 * 114;
+                lum_a.cmp(&lum_b)
+            })
+        })
         .map(|(_, color)| *color)
         .unwrap_or((255, 255, 255, 255))
 }

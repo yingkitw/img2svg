@@ -6,13 +6,17 @@ use std::path::PathBuf;
 #[command(about = "A high-quality image to SVG converter with Bézier curves")]
 #[command(version)]
 pub struct Cli {
-    /// Input image file
+    /// Input image file or directory (batch mode)
     #[arg(short, long)]
     pub input: PathBuf,
 
-    /// Output SVG file
+    /// Output SVG file or directory (batch mode)
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Maximum image dimension (auto-resize larger images to prevent OOM)
+    #[arg(long, default_value = "4096")]
+    pub max_size: u32,
 
     /// Number of colors to quantize (default: 16)
     #[arg(short, long, default_value = "16")]
@@ -41,4 +45,16 @@ pub struct Cli {
     /// Use original pipeline (line segments, RDP simplification) instead of default Bézier
     #[arg(long)]
     pub original: bool,
+}
+
+/// Check if a file extension is a supported image format.
+pub fn is_supported_image(path: &std::path::Path) -> bool {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        matches!(
+            ext.to_lowercase().as_str(),
+            "bmp" | "png" | "jpg" | "jpeg" | "gif" | "ico" | "tiff" | "tif" | "webp" | "pnm" | "tga" | "dds" | "farbfeld"
+        )
+    } else {
+        false
+    }
 }

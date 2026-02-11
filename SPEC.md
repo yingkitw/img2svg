@@ -6,6 +6,9 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 ## Input
 - Raster image file (PNG, JPEG, BMP, WebP, TIFF via `image` crate)
 - CLI Parameters:
+  - `--input` / `-i`: Input image file or directory (batch mode)
+  - `--output` / `-o`: Output SVG file or directory
+  - `--max-size`: Auto-resize images exceeding this dimension (default: 4096)
   - `--colors` / `-c`: Number of colors for quantization (1-64, default: 16)
   - `--threshold` / `-t`: Edge detection threshold (0.0-1.0, default: 0.1)
   - `--smooth` / `-s`: Path smoothing level (0-10, default: 5)
@@ -24,17 +27,19 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 
 ### Default Pipeline (Bézier curves)
 1. **Load** → `image_processor::load_image` → `ImageData`
-2. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
-3. **[Auto] Preprocess** → Bilateral filter for photos (auto-detected when >1000 colors)
-4. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
-5. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine → majority-vote smoothing
-6. **Contour** → `vectorizer::marching_squares_contours` → Per-color binary mask → sub-pixel contours
-7. **[Fast path]** Thin stripes (< 2px) → direct SVG rect via `svg_override`
-8. **[Parallel] Smooth** → `path_simplifier::smooth_with_corners` → Gaussian smoothing preserving corners
-9. **[Parallel] Simplify** → `path_simplifier::visvalingam_whyatt` → Area-based simplification with corner preservation
-10. **[Parallel] Snap** → Edge snapping + `inject_image_corners` + `dedup_consecutive`
-11. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with Newton-Raphson + G1 continuity
-12. **SVG emit** → `enhanced_vectorizer::generate_enhanced_svg` → Background rect + gap-filling strokes + color grouping
+2. **Auto-resize** → `image_processor::resize_if_needed` → Lanczos3 downscale if > `--max-size`
+3. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
+4. **[Auto] Preprocess** → LUT bilateral filter for photos (auto-detected when >1000 colors)
+5. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
+6. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine → majority-vote smoothing
+7. **Recolor** → Average original pixels per quantized region for richer color fidelity
+8. **Contour** → `vectorizer::marching_squares_contours` → Per-color binary mask → sub-pixel contours
+9. **[Fast path]** Thin stripes (< 2px) → direct SVG rect via `svg_override`
+10. **[Parallel] Smooth** → `path_simplifier::smooth_with_corners` → Gaussian smoothing preserving corners
+11. **[Parallel] Simplify** → `path_simplifier::visvalingam_whyatt` → Area-based simplification with corner preservation
+12. **[Parallel] Snap** → Edge snapping + `inject_image_corners` + `dedup_consecutive`
+13. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with Newton-Raphson + G1 continuity
+14. **SVG emit** → `enhanced_vectorizer::generate_enhanced_svg` → Background rect + gap-filling strokes + color grouping
 
 ### Original Pipeline (--original flag)
 1. **Load** → `image_processor::load_image` → `ImageData { width, height, pixels: Vec<RGBA8> }`
@@ -48,7 +53,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 
 ### Preprocessing Mode (--preprocess)
 Applied before quantization for photographs:
-1. **Bilateral filter**: Edge-preserving smoothing (σ_spatial=5.0, σ_color=40.0, 2 iterations)
+1. **LUT Bilateral filter**: Fast edge-preserving smoothing with precomputed range-weight LUT (σ_color=40.0, radius=2, 2 iterations)
 2. **Color reduction**: Posterization to ~128 color levels (50% reduction)
 
 ## Quality Criteria
@@ -59,7 +64,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 252 tests passing (121 lib + 120 bin + 9 integration + 2 doctests)
+- ✅ 262 tests passing (126 lib + 125 bin + 9 integration + 2 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time

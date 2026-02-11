@@ -221,7 +221,9 @@ impl BezierFitter {
         }
     }
 
-    /// Check if a sequence of points is nearly collinear (max deviation < tolerance).
+    /// Check if a sequence of points is nearly collinear (max deviation < threshold).
+    /// For long segments, uses a relative threshold (1% of segment length) to avoid
+    /// fitting curves to what are essentially straight lines with tiny deviations.
     fn is_nearly_linear(&self, points: &[Point]) -> bool {
         if points.len() < 3 {
             return true;
@@ -234,9 +236,13 @@ impl BezierFitter {
         if line_len < 1e-6 {
             return true;
         }
+        // Use the larger of: fixed tolerance, or 1% of segment length.
+        // This prevents long near-vertical/horizontal lines from being curved
+        // due to tiny pixel-level deviations after simplification.
+        let threshold = (self.tolerance * 0.5).max(line_len * 0.01);
         for p in &points[1..points.len() - 1] {
             let dist = ((p.y - start.y) * dx - (p.x - start.x) * dy).abs() / line_len;
-            if dist > self.tolerance * 0.5 {
+            if dist > threshold {
                 return false;
             }
         }
