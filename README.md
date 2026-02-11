@@ -43,10 +43,10 @@ See the `examples/` directory for sample conversions demonstrating quality.
 
 | Input | Output |
 |-------|--------|
-| ![simple.png](examples/input/simple.png) | ![simple.svg](examples/output/simple.svg) |
+| ![simple.png](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/simple.png) | ![simple.svg](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/simple.svg) |
 
 **Details:**
-- Command: `img2svg -i examples/input/simple.png -o examples/output/simple.svg -c 8 -s 3`
+- Command: `img2svg -i https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/simple.png -o https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/simple.svg -c 8 -s 3`
 - Input: 50x50 PNG (2KB) - Basic geometric shapes
 - Output: SVG with clean vector paths
 - Result: Perfect edges, scalable without quality loss
@@ -55,10 +55,10 @@ See the `examples/` directory for sample conversions demonstrating quality.
 
 | Input | Output |
 |-------|--------|
-| ![gradient.png](examples/input/gradient.png) | ![gradient.svg](examples/output/gradient.svg) |
+| ![gradient.png](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/gradient.png) | ![gradient.svg](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/gradient.svg) |
 
 **Details:**
-- Command: `img2svg -i examples/input/gradient.png -o examples/output/gradient.svg -c 16 -s 5`
+- Command: `img2svg -i https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/gradient.png -o https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/gradient.svg -c 16 -s 5`
 - Input: 100x100 PNG (1KB) - Smooth gradient
 - Output: SVG with banding minimized
 - Result: Smooth color transitions, vector-friendly
@@ -67,10 +67,10 @@ See the `examples/` directory for sample conversions demonstrating quality.
 
 | Input | Output |
 |-------|--------|
-| ![medium.png](examples/input/medium.png) | ![medium.svg](examples/output/medium.svg) |
+| ![medium.png](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/medium.png) | ![medium.svg](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/medium.svg) |
 
 **Details:**
-- Command: `img2svg -i examples/input/medium.png -o examples/output/medium.svg -c 16 -s 5`
+- Command: `img2svg -i https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/medium.png -o https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/medium.svg -c 16 -s 5`
 - Input: 100x100 PNG (2KB)
 - Output: SVG with clean regions
 - Result: Preserves shapes, smooth curves
@@ -79,10 +79,10 @@ See the `examples/` directory for sample conversions demonstrating quality.
 
 | Input | Output |
 |-------|--------|
-| ![complex.png](examples/input/complex.png) | ![complex.svg](examples/output/complex.svg) |
+| ![complex.png](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/complex.png) | ![complex.svg](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/complex.svg) |
 
 **Details:**
-- Command: `img2svg -i examples/input/complex.png -o examples/output/complex.svg -c 16 -s 5`
+- Command: `img2svg -i https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/complex.png -o https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/complex.svg -c 16 -s 5`
 - Input: 200x200 PNG (6KB) - Detailed illustration
 - Output: SVG with fine details preserved
 - Result: Clean paths, scalable
@@ -91,10 +91,10 @@ See the `examples/` directory for sample conversions demonstrating quality.
 
 | Input | Output |
 |-------|--------|
-| ![very_complex.png](examples/input/very_complex.png) | ![very_complex.svg](examples/output/very_complex.svg) |
+| ![very_complex.png](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/very_complex.png) | ![very_complex.svg](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/very_complex.svg) |
 
 **Details:**
-- Command: `img2svg -i examples/input/very_complex.png -o examples/output/very_complex.svg -c 32 -s 7`
+- Command: `img2svg -i https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/very_complex.png -o https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/very_complex.svg -c 32 -s 7`
 - Input: 200x200 PNG (13KB) - Highly detailed
 - Output: SVG with complex paths
 - Result: Details preserved, clean vector output
@@ -105,14 +105,14 @@ Photographs benefit from the `--preprocess` flag which applies edge-preserving s
 
 | Input PNG | Output SVG (with --preprocess) |
 |-----------|------------------------------|
-| ![lenna.png](examples/input/lenna.png) | ![lenna.svg](examples/output/lenna.svg) |
+| ![lenna.png](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/lenna.png) | ![lenna.svg](https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/lenna.svg) |
 
 **Comparison:**
 - **Without preprocessing**: 87 KB SVG with heavy color banding
 - **With preprocessing**: 28 KB SVG (67% smaller) with cleaner regions
 
 **Details:**
-- Command: `img2svg -i examples/input/lenna.png -o examples/output/lenna.svg --preprocess -c 12 -t 0.15 -s 3`
+- Command: `img2svg -i https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/input/lenna.png -o https://raw.githubusercontent.com/yingkitw/img2svg/main/examples/output/lenna.svg --preprocess -c 12 -t 0.15 -s 3`
 - Input: 512x512 PNG - Standard test photograph
 - Output: Vector version with preprocessing applied
 - Result: Preprocessing significantly reduces file size and color banding for photographs
