@@ -9,9 +9,7 @@
 
 use crate::bezier_fitter::{bezier_to_svg_path, BezierCurve, BezierFitter};
 use crate::edge_detector::detect_edges_sobel;
-use crate::enhanced_quantizer::{
-    adaptive_color_count, count_distinct_colors, quantize_edge_aware,
-};
+use crate::enhanced_quantizer::{adaptive_color_count, count_distinct_colors, quantize_edge_aware};
 use crate::image_processor::ImageData;
 use crate::path_simplifier::{detect_corners, smooth_with_corners, visvalingam_whyatt};
 use crate::preprocessor::{preprocess, PreprocessOptions};
@@ -150,27 +148,36 @@ pub fn vectorize_enhanced(
     }
 
     // Build a mapping from quantized color → average original color for display
-    let recolor_map: HashMap<(u8, u8, u8, u8), (u8, u8, u8, u8)> = if options.recolor && is_many_colors {
-        let mut map = HashMap::new();
-        for (&qcolor, pixels) in &color_pixels {
-            let mut sr: u64 = 0;
-            let mut sg: u64 = 0;
-            let mut sb: u64 = 0;
-            let mut sa: u64 = 0;
-            for &(x, y) in pixels {
-                let p = image_data.pixels[y * width + x];
-                sr += p.r as u64;
-                sg += p.g as u64;
-                sb += p.b as u64;
-                sa += p.a as u64;
+    let recolor_map: HashMap<(u8, u8, u8, u8), (u8, u8, u8, u8)> =
+        if options.recolor && is_many_colors {
+            let mut map = HashMap::new();
+            for (&qcolor, pixels) in &color_pixels {
+                let mut sr: u64 = 0;
+                let mut sg: u64 = 0;
+                let mut sb: u64 = 0;
+                let mut sa: u64 = 0;
+                for &(x, y) in pixels {
+                    let p = image_data.pixels[y * width + x];
+                    sr += p.r as u64;
+                    sg += p.g as u64;
+                    sb += p.b as u64;
+                    sa += p.a as u64;
+                }
+                let n = pixels.len() as u64;
+                map.insert(
+                    qcolor,
+                    (
+                        (sr / n) as u8,
+                        (sg / n) as u8,
+                        (sb / n) as u8,
+                        (sa / n) as u8,
+                    ),
+                );
             }
-            let n = pixels.len() as u64;
-            map.insert(qcolor, ((sr / n) as u8, (sg / n) as u8, (sb / n) as u8, (sa / n) as u8));
-        }
-        map
-    } else {
-        HashMap::new()
-    };
+            map
+        } else {
+            HashMap::new()
+        };
 
     // Sort colors by pixel count (largest area first for proper z-order)
     let mut color_list: Vec<_> = color_pixels.into_iter().collect();
@@ -235,8 +242,16 @@ pub fn vectorize_enhanced(
                 if (cb_h < 2.0 && cb_w >= 2.0) || (cb_w < 2.0 && cb_h >= 2.0) {
                     let x0 = cb_min_x.round() as i64;
                     let y0 = cb_min_y.round() as i64;
-                    let x1 = if cb_w < 2.0 { x0 + cb_w.ceil().max(1.0) as i64 } else { cb_max_x.round() as i64 };
-                    let y1 = if cb_h < 2.0 { y0 + cb_h.ceil().max(1.0) as i64 } else { cb_max_y.round() as i64 };
+                    let x1 = if cb_w < 2.0 {
+                        x0 + cb_w.ceil().max(1.0) as i64
+                    } else {
+                        cb_max_x.round() as i64
+                    };
+                    let y1 = if cb_h < 2.0 {
+                        y0 + cb_h.ceil().max(1.0) as i64
+                    } else {
+                        cb_max_y.round() as i64
+                    };
                     // Emit direct SVG rect path (bypasses bezier_to_svg_path collinear merge)
                     let svg = format!("M{x0},{y0}L{x1},{y0}L{x1},{y1}L{x0},{y1}Z");
                     paths.push(EnhancedPath {
@@ -249,11 +264,8 @@ pub fn vectorize_enhanced(
                 }
 
                 // Smooth with corner preservation (enhanced)
-                let smoothed = smooth_with_corners(
-                    contour,
-                    options.smooth_window,
-                    options.corner_threshold,
-                );
+                let smoothed =
+                    smooth_with_corners(contour, options.smooth_window, options.corner_threshold);
 
                 // Detect corners for Visvalingam-Whyatt (enhanced)
                 let corners = detect_corners(&smoothed, options.corner_threshold);
@@ -270,8 +282,20 @@ pub fn vectorize_enhanced(
                 let snapped: Vec<Point> = simplified
                     .into_iter()
                     .map(|p| Point {
-                        x: if p.x < snap { 0.0 } else if p.x > w_f - snap { w_f } else { p.x },
-                        y: if p.y < snap { 0.0 } else if p.y > h_f - snap { h_f } else { p.y },
+                        x: if p.x < snap {
+                            0.0
+                        } else if p.x > w_f - snap {
+                            w_f
+                        } else {
+                            p.x
+                        },
+                        y: if p.y < snap {
+                            0.0
+                        } else if p.y > h_f - snap {
+                            h_f
+                        } else {
+                            p.y
+                        },
                     })
                     .collect();
 
@@ -345,11 +369,17 @@ fn dedup_consecutive(points: &[Point], threshold: f64) -> Vec<Point> {
 /// Returns: 'T' (top, y=0), 'B' (bottom, y=H), 'L' (left, x=0), 'R' (right, x=W), or ' ' (interior).
 fn edge_of(p: &Point, w: f64, h: f64) -> char {
     let eps = 0.01;
-    if p.y.abs() < eps { 'T' }
-    else if (p.y - h).abs() < eps { 'B' }
-    else if p.x.abs() < eps { 'L' }
-    else if (p.x - w).abs() < eps { 'R' }
-    else { ' ' }
+    if p.y.abs() < eps {
+        'T'
+    } else if (p.y - h).abs() < eps {
+        'B'
+    } else if p.x.abs() < eps {
+        'L'
+    } else if (p.x - w).abs() < eps {
+        'R'
+    } else {
+        ' '
+    }
 }
 
 /// Inject image corner points where a contour transitions between two different
@@ -362,9 +392,9 @@ fn inject_image_corners(points: &[Point], w: f64, h: f64) -> Vec<Point> {
     }
 
     let corners = [
-        ('T', 'R', Point { x: w, y: 0.0 }),  // top-right
-        ('R', 'B', Point { x: w, y: h }),      // bottom-right
-        ('B', 'L', Point { x: 0.0, y: h }),    // bottom-left
+        ('T', 'R', Point { x: w, y: 0.0 }),   // top-right
+        ('R', 'B', Point { x: w, y: h }),     // bottom-right
+        ('B', 'L', Point { x: 0.0, y: h }),   // bottom-left
         ('L', 'T', Point { x: 0.0, y: 0.0 }), // top-left
     ];
 
@@ -472,10 +502,7 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
 }
 
 /// Write enhanced SVG to a file.
-pub fn write_enhanced_svg(
-    data: &EnhancedVectorData,
-    output_path: &std::path::Path,
-) -> Result<()> {
+pub fn write_enhanced_svg(data: &EnhancedVectorData, output_path: &std::path::Path) -> Result<()> {
     let svg = generate_enhanced_svg(data);
     let mut file = std::fs::File::create(output_path)?;
     file.write_all(svg.as_bytes())?;
@@ -563,7 +590,11 @@ mod tests {
                 }
             }
         }
-        ImageData { width: w, height: h, pixels }
+        ImageData {
+            width: w,
+            height: h,
+            pixels,
+        }
     }
 
     #[test]
@@ -615,15 +646,14 @@ mod tests {
         let mut pixels = Vec::new();
         for y in 0..20 {
             for x in 0..20 {
-                pixels.push(RGBA8::new(
-                    (x * 12) as u8,
-                    (y * 12) as u8,
-                    128,
-                    255,
-                ));
+                pixels.push(RGBA8::new((x * 12) as u8, (y * 12) as u8, 128, 255));
             }
         }
-        let img = ImageData { width: 20, height: 20, pixels };
+        let img = ImageData {
+            width: 20,
+            height: 20,
+            pixels,
+        };
         let options = EnhancedOptions {
             num_colors: 8,
             preprocess: false,
@@ -636,7 +666,11 @@ mod tests {
     #[test]
     fn test_enhanced_vectorize_single_color() {
         let pixels = vec![RGBA8::new(128, 128, 128, 255); 100];
-        let img = ImageData { width: 10, height: 10, pixels };
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
         let options = EnhancedOptions {
             num_colors: 4,
             preprocess: false,
@@ -685,7 +719,9 @@ mod tests {
         let result = inject_image_corners(&pts, 400.0, 400.0);
         // Should have injected (400,0) between right-edge and top-edge points
         assert!(result.len() > 3);
-        let corner_found = result.iter().any(|p| (p.x - 400.0).abs() < 0.01 && p.y.abs() < 0.01);
+        let corner_found = result
+            .iter()
+            .any(|p| (p.x - 400.0).abs() < 0.01 && p.y.abs() < 0.01);
         assert!(corner_found, "Expected corner (400,0) to be injected");
     }
 
@@ -706,12 +742,16 @@ mod tests {
         // Contour visits all 4 edges → should inject up to 4 corners
         let pts = vec![
             Point { x: 200.0, y: 0.0 },   // top
-            Point { x: 400.0, y: 200.0 },  // right
-            Point { x: 200.0, y: 400.0 },  // bottom
-            Point { x: 0.0, y: 200.0 },    // left
+            Point { x: 400.0, y: 200.0 }, // right
+            Point { x: 200.0, y: 400.0 }, // bottom
+            Point { x: 0.0, y: 200.0 },   // left
         ];
         let result = inject_image_corners(&pts, 400.0, 400.0);
-        assert!(result.len() >= 8, "Expected 4 original + 4 corners, got {}", result.len());
+        assert!(
+            result.len() >= 8,
+            "Expected 4 original + 4 corners, got {}",
+            result.len()
+        );
     }
 
     #[test]
@@ -728,7 +768,11 @@ mod tests {
                 ));
             }
         }
-        let img = ImageData { width: 30, height: 30, pixels };
+        let img = ImageData {
+            width: 30,
+            height: 30,
+            pixels,
+        };
         let options_no_recolor = EnhancedOptions {
             num_colors: 8,
             preprocess: false,

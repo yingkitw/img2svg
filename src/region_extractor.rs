@@ -43,7 +43,13 @@ pub fn extract_regions_by_index(
 
             let seed_idx = indices[idx];
             let region_pixels = flood_fill_by_index(
-                x as u32, y as u32, width, height, indices, seed_idx, &mut visited,
+                x as u32,
+                y as u32,
+                width,
+                height,
+                indices,
+                seed_idx,
+                &mut visited,
             );
 
             if region_pixels.len() < min_area {
@@ -101,8 +107,14 @@ fn flood_fill_by_index(
 
         // 8-connectivity
         for (dx, dy) in [
-            (0i32, 1i32), (1, 0), (0, -1), (-1, 0),
-            (1, 1), (1, -1), (-1, 1), (-1, -1),
+            (0i32, 1i32),
+            (1, 0),
+            (0, -1),
+            (-1, 0),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
         ] {
             let nx = ix + dx;
             let ny = iy + dy;
@@ -347,9 +359,7 @@ fn enforce_max_gap(points: &[Point], keep: &mut [bool], max_gap: f64) {
 }
 
 /// Detect background color by sampling border pixels (most frequent color).
-pub fn detect_background_color(
-    image_data: &crate::image_processor::ImageData,
-) -> (u8, u8, u8, u8) {
+pub fn detect_background_color(image_data: &crate::image_processor::ImageData) -> (u8, u8, u8, u8) {
     let w = image_data.width as usize;
     let h = image_data.height as usize;
     if w == 0 || h == 0 {
@@ -362,9 +372,7 @@ pub fn detect_background_color(
     let mut sample_border = |x: usize, y: usize| {
         let p = &image_data.pixels[y * w + x];
         let key = (p.r as u32) << 16 | (p.g as u32) << 8 | p.b as u32;
-        let entry = color_counts
-            .entry(key)
-            .or_insert((0, (p.r, p.g, p.b, p.a)));
+        let entry = color_counts.entry(key).or_insert((0, (p.r, p.g, p.b, p.a)));
         entry.0 += 1;
     };
 
@@ -474,10 +482,7 @@ mod tests {
                 indices[y * 4 + x] = 1;
             }
         }
-        let palette = vec![
-            RGBA8::new(255, 0, 0, 255),
-            RGBA8::new(0, 0, 255, 255),
-        ];
+        let palette = vec![RGBA8::new(255, 0, 0, 255), RGBA8::new(0, 0, 255, 255)];
         let regions = extract_regions_by_index(4, 4, &indices, &palette, 1);
         assert_eq!(regions.len(), 2);
     }
@@ -486,10 +491,7 @@ mod tests {
     fn test_extract_regions_min_area_filter() {
         // Single pixel region should be filtered out with min_area=2
         let indices = vec![0, 1, 0, 0];
-        let palette = vec![
-            RGBA8::new(255, 0, 0, 255),
-            RGBA8::new(0, 255, 0, 255),
-        ];
+        let palette = vec![RGBA8::new(255, 0, 0, 255), RGBA8::new(0, 255, 0, 255)];
         let regions = extract_regions_by_index(2, 2, &indices, &palette, 2);
         // Region with index 1 has only 1 pixel, should be filtered
         assert_eq!(regions.len(), 1);
@@ -505,7 +507,11 @@ mod tests {
         pixels[6] = RGBA8::new(0, 0, 255, 255);
         pixels[9] = RGBA8::new(0, 0, 255, 255);
         pixels[10] = RGBA8::new(0, 0, 255, 255);
-        let img = ImageData { width: 4, height: 4, pixels };
+        let img = ImageData {
+            width: 4,
+            height: 4,
+            pixels,
+        };
         let bg = detect_background_color(&img);
         assert_eq!(bg, (255, 0, 0, 255));
     }

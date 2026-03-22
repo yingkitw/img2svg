@@ -23,9 +23,7 @@ pub fn detect_edges_sobel(image_data: &ImageData) -> EdgeMap {
     let gray: Vec<u8> = image_data
         .pixels
         .iter()
-        .map(|p| {
-            (0.299 * p.r as f64 + 0.587 * p.g as f64 + 0.114 * p.b as f64) as u8
-        })
+        .map(|p| (0.299 * p.r as f64 + 0.587 * p.g as f64 + 0.114 * p.b as f64) as u8)
         .collect();
 
     let mut edge_buf = vec![0u8; w * h];
@@ -79,7 +77,11 @@ mod tests {
                 }
             }
         }
-        let img = ImageData { width: 10, height: 10, pixels };
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
         let edges = detect_edges_sobel(&img);
         assert_eq!(edges.width, 10);
         assert_eq!(edges.height, 10);
@@ -90,7 +92,11 @@ mod tests {
     #[test]
     fn test_sobel_uniform_image_no_edges() {
         let pixels = vec![RGBA8::new(128, 128, 128, 255); 100];
-        let img = ImageData { width: 10, height: 10, pixels };
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
         let edges = detect_edges_sobel(&img);
         // Uniform image should have no edges
         for &v in &edges.data {
@@ -110,7 +116,11 @@ mod tests {
                 }
             }
         }
-        let img = ImageData { width: 10, height: 10, pixels };
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
         let edges = detect_edges_sobel(&img);
         // Edge should be detected near y=5
         assert!(edges.data[5 * 10 + 5] > 0);

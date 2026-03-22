@@ -105,11 +105,7 @@ fn harris_corner_measure(points: &[Point], idx: usize, window_size: usize) -> Op
 /// Visvalingam-Whyatt simplification: iteratively removes the point that
 /// contributes the least area (triangle formed with its neighbors).
 /// Preserves specified corner indices by giving them infinite area.
-pub fn visvalingam_whyatt(
-    points: &[Point],
-    min_area: f64,
-    corner_indices: &[usize],
-) -> Vec<Point> {
+pub fn visvalingam_whyatt(points: &[Point], min_area: f64, corner_indices: &[usize]) -> Vec<Point> {
     let n = points.len();
     if n <= 3 {
         return points.to_vec();
@@ -151,14 +147,14 @@ pub fn visvalingam_whyatt(
                 if let (Some(p), Some(nx)) = (prev, next) {
                     if let Some(pp) = find_prev_alive(&alive, p) {
                         if !corner_set.contains(&p) {
-                            areas[p] = triangle_area(&points[pp], &points[p], &points[nx])
-                                .max(min_val);
+                            areas[p] =
+                                triangle_area(&points[pp], &points[p], &points[nx]).max(min_val);
                         }
                     }
                     if let Some(nn) = find_next_alive(&alive, nx) {
                         if !corner_set.contains(&nx) {
-                            areas[nx] = triangle_area(&points[p], &points[nx], &points[nn])
-                                .max(min_val);
+                            areas[nx] =
+                                triangle_area(&points[p], &points[nx], &points[nn]).max(min_val);
                         }
                     }
                 }
@@ -176,7 +172,11 @@ pub fn visvalingam_whyatt(
 }
 
 /// Gaussian-weighted smoothing that preserves corners.
-pub fn smooth_with_corners(points: &[Point], window_size: usize, corner_threshold_deg: f64) -> Vec<Point> {
+pub fn smooth_with_corners(
+    points: &[Point],
+    window_size: usize,
+    corner_threshold_deg: f64,
+) -> Vec<Point> {
     if points.len() <= window_size {
         return points.to_vec();
     }
@@ -220,7 +220,10 @@ pub fn smooth_with_corners(points: &[Point], window_size: usize, corner_threshol
         }
 
         if sum_w > 0.0 {
-            smoothed.push(Point { x: sum_x / sum_w, y: sum_y / sum_w });
+            smoothed.push(Point {
+                x: sum_x / sum_w,
+                y: sum_y / sum_w,
+            });
         } else {
             smoothed.push(points[i].clone());
         }
@@ -261,7 +264,10 @@ mod tests {
     #[test]
     fn test_detect_corners_straight_line() {
         let points: Vec<Point> = (0..10)
-            .map(|i| Point { x: i as f64, y: 0.0 })
+            .map(|i| Point {
+                x: i as f64,
+                y: 0.0,
+            })
             .collect();
         let corners = detect_corners(&points, 60.0);
         assert!(corners.is_empty());
@@ -288,7 +294,10 @@ mod tests {
     #[test]
     fn test_visvalingam_collinear_reduction() {
         let points: Vec<Point> = (0..20)
-            .map(|i| Point { x: i as f64, y: 0.0 })
+            .map(|i| Point {
+                x: i as f64,
+                y: 0.0,
+            })
             .collect();
         let simplified = visvalingam_whyatt(&points, 1.0, &[]);
         assert!(simplified.len() < points.len());

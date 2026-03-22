@@ -311,7 +311,11 @@ mod tests {
         for i in 0..100 {
             pixels.push(RGBA8::new(i as u8 * 2, i as u8, 0, 255));
         }
-        let img = ImageData { width: 10, height: 10, pixels };
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
         let (quantized, indices, palette) = quantize_enhanced(&img, 4);
         assert_eq!(quantized.pixels.len(), 100);
         assert_eq!(indices.len(), 100);
@@ -325,7 +329,11 @@ mod tests {
     #[test]
     fn test_quantize_enhanced_single_color() {
         let pixels = vec![RGBA8::new(128, 128, 128, 255); 25];
-        let img = ImageData { width: 5, height: 5, pixels };
+        let img = ImageData {
+            width: 5,
+            height: 5,
+            pixels,
+        };
         let (quantized, _, palette) = quantize_enhanced(&img, 4);
         // Should produce 1 color since input is uniform
         assert!(palette.len() >= 1);
@@ -346,15 +354,31 @@ mod tests {
             RGBA8::new(0, 0, 255, 255),
             RGBA8::new(255, 0, 0, 255), // duplicate
         ];
-        let img = ImageData { width: 2, height: 2, pixels };
+        let img = ImageData {
+            width: 2,
+            height: 2,
+            pixels,
+        };
         assert_eq!(count_distinct_colors(&img), 3);
     }
 
     #[test]
     fn test_adaptive_color_count() {
-        let small = ImageData { width: 50, height: 50, pixels: vec![RGBA8::new(0,0,0,255); 2500] };
-        let medium = ImageData { width: 200, height: 200, pixels: vec![RGBA8::new(0,0,0,255); 40000] };
-        let large = ImageData { width: 1000, height: 1000, pixels: vec![RGBA8::new(0,0,0,255); 1000000] };
+        let small = ImageData {
+            width: 50,
+            height: 50,
+            pixels: vec![RGBA8::new(0, 0, 0, 255); 2500],
+        };
+        let medium = ImageData {
+            width: 200,
+            height: 200,
+            pixels: vec![RGBA8::new(0, 0, 0, 255); 40000],
+        };
+        let large = ImageData {
+            width: 1000,
+            height: 1000,
+            pixels: vec![RGBA8::new(0, 0, 0, 255); 1000000],
+        };
         assert_eq!(adaptive_color_count(&small), 64);
         assert_eq!(adaptive_color_count(&medium), 128);
         assert_eq!(adaptive_color_count(&large), 256);
@@ -373,7 +397,11 @@ mod tests {
                 }
             }
         }
-        let img = ImageData { width: 10, height: 10, pixels };
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
         let edges = crate::edge_detector::detect_edges_sobel(&img);
         let (quantized, indices, palette) = quantize_edge_aware(&img, 4, &edges, 25, 2);
         assert_eq!(quantized.pixels.len(), 100);

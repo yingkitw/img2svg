@@ -104,6 +104,53 @@
 - [ ] Interactive mode for parameter tuning with live preview
 - [ ] Export to other vector formats (PDF, EPS, AI)
 
+### Image Processing Algorithms 🆕
+
+#### Noise Reduction
+- [ ] Non-local means (NLM) denoising
+- [ ] Anisotropic diffusion (Perona-Malik)
+- [x] Median filter for salt-and-pepper noise
+- [ ] Weighted median filter
+
+#### Edge Detection & Enhancement
+- [x] Canny edge detector (non-max suppression + hysteresis)
+- [x] Prewitt edge detector
+- [x] Roberts cross-gradient operator
+- [x] Unsharp masking for sharpening
+- [x] Laplacian sharpening
+- [ ] High-boost filtering
+
+#### Contrast & Tone Mapping
+- [x] Histogram equalization
+- [x] CLAHE (Contrast Limited Adaptive Histogram Equalization)
+- [x] Gamma correction
+- [ ] Adaptive tone mapping
+
+#### Thresholding & Segmentation
+- [x] Otsu thresholding
+- [x] Adaptive thresholding
+- [ ] Watershed segmentation
+- [ ] Mean shift segmentation
+
+#### Morphological Operations
+- [x] Erosion and dilation
+- [x] Opening and closing
+- [x] Top-hat and bottom-hat transforms
+- [x] Morphological gradient
+
+#### Color Operations
+- [x] Color temperature adjustment
+- [x] Saturation enhancement
+- [x] Color balance
+- [x] Hue/Saturation/Lightness (HSL) conversion
+- [x] LAB color space conversion
+
+#### Special Effects
+- [x] Emboss effect
+- [x] Edge glow effect
+- [x] Vintage/sepia filter
+- [x] Vignette effect
+
 ## Maybe / Future Considerations 💭
 
 - [ ] WebAssembly compilation for browser-based conversion

@@ -4,8 +4,8 @@
 //! particularly useful for photographs or complex images.
 
 use crate::image_processor::ImageData;
-use rgb::RGBA8;
 use anyhow::Result;
+use rgb::RGBA8;
 
 /// Preprocessing options
 #[derive(Debug, Clone)]
@@ -35,9 +35,9 @@ impl PreprocessOptions {
     /// Create options optimized for photographs
     pub fn photo() -> Self {
         Self {
-            color_reduction: 0.5,  // Moderate color reduction
-            spatial_sigma: 5.0,     // More spatial smoothing
-            color_sigma: 40.0,      // More color smoothing
+            color_reduction: 0.5, // Moderate color reduction
+            spatial_sigma: 5.0,   // More spatial smoothing
+            color_sigma: 40.0,    // More color smoothing
             iterations: 2,
         }
     }
@@ -60,8 +60,13 @@ pub fn preprocess(image_data: &ImageData, options: &PreprocessOptions) -> Result
     // Apply bilateral filter for edge-preserving smoothing
     if options.spatial_sigma > 0.0 && options.iterations > 0 {
         for _ in 0..options.iterations {
-            pixels = bilateral_filter(&pixels, image_data.width, image_data.height,
-                                       options.spatial_sigma, options.color_sigma);
+            pixels = bilateral_filter(
+                &pixels,
+                image_data.width,
+                image_data.height,
+                options.spatial_sigma,
+                options.color_sigma,
+            );
         }
     }
 
@@ -167,14 +172,17 @@ fn reduce_colors(pixels: &[RGBA8], reduction: f32) -> Vec<RGBA8> {
     let levels = ((1.0 - reduction) * 254.0 + 2.0).clamp(2.0, 256.0) as u8;
     let factor = 255.0 / (levels - 1) as f32;
 
-    pixels.iter().map(|p| {
-        RGBA8::new(
-            ((p.r as f32 / factor).round() * factor).clamp(0.0, 255.0) as u8,
-            ((p.g as f32 / factor).round() * factor).clamp(0.0, 255.0) as u8,
-            ((p.b as f32 / factor).round() * factor).clamp(0.0, 255.0) as u8,
-            p.a,
-        )
-    }).collect()
+    pixels
+        .iter()
+        .map(|p| {
+            RGBA8::new(
+                ((p.r as f32 / factor).round() * factor).clamp(0.0, 255.0) as u8,
+                ((p.g as f32 / factor).round() * factor).clamp(0.0, 255.0) as u8,
+                ((p.b as f32 / factor).round() * factor).clamp(0.0, 255.0) as u8,
+                p.a,
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -185,7 +193,7 @@ mod tests {
     fn test_reduce_colors_none() {
         let pixels = vec![
             RGBA8::new(0, 0, 0, 255),
-            RGBA8::new(127, 127, 127, 255),  // Use 127 instead of 128 to avoid rounding issues
+            RGBA8::new(127, 127, 127, 255), // Use 127 instead of 128 to avoid rounding issues
             RGBA8::new(255, 255, 255, 255),
         ];
         let result = reduce_colors(&pixels, 0.0);

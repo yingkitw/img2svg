@@ -26,26 +26,33 @@
 //!     .expect("Conversion failed");
 //! ```
 
-pub mod image_processor;
-pub mod svg_generator;
-pub mod vectorizer;
-pub mod preprocessor;
+pub mod bezier_fitter;
 pub mod edge_detector;
 pub mod enhanced_quantizer;
-pub mod region_extractor;
-pub mod path_simplifier;
-pub mod bezier_fitter;
 pub mod enhanced_vectorizer;
+pub mod image_filters;
+pub mod image_processor;
+pub mod path_simplifier;
+pub mod preprocessor;
+pub mod region_extractor;
+pub mod svg_generator;
+pub mod vectorizer;
 
+pub use anyhow::Result;
+pub use enhanced_vectorizer::{
+    generate_enhanced_svg, vectorize_enhanced, write_enhanced_svg, EnhancedOptions, EnhancedPath,
+    EnhancedVectorData,
+};
+pub use image_filters::{
+    median_filter, prewitt_edge_detection, roberts_edge_detection, AdaptiveThreshold,
+    CannyEdgeDetector, ColorOps, ColorTemperature, EmbossFilter, GammaCorrection,
+    HistogramEqualizer, LaplacianSharpen, MorphologyKind, MorphologyOp, OtsuThreshold, Saturation,
+    SepiaFilter, UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
+};
 pub use image_processor::{load_image, quantize_colors, ImageData};
+pub use preprocessor::{preprocess, PreprocessOptions};
 pub use svg_generator::{generate_svg, generate_svg_advanced};
 pub use vectorizer::{vectorize, Curve, Point, VectorizedData};
-pub use preprocessor::{preprocess, PreprocessOptions};
-pub use enhanced_vectorizer::{
-    vectorize_enhanced, generate_enhanced_svg, write_enhanced_svg,
-    EnhancedOptions, EnhancedVectorData, EnhancedPath,
-};
-pub use anyhow::Result;
 
 /// Options for image to SVG conversion
 #[derive(Debug, Clone)]
@@ -132,7 +139,10 @@ pub fn convert(
 /// # Returns
 ///
 /// A String containing the SVG content
-pub fn convert_to_svg_string(image_data: &ImageData, options: &ConversionOptions) -> Result<String> {
+pub fn convert_to_svg_string(
+    image_data: &ImageData,
+    options: &ConversionOptions,
+) -> Result<String> {
     let vectorized_data = vectorize(
         image_data,
         options.num_colors,
@@ -160,9 +170,7 @@ pub fn convert_to_svg_string(image_data: &ImageData, options: &ConversionOptions
     writeln!(
         &mut buffer,
         r#"  <rect width="{}" height="{}" fill="{}"/>"#,
-        vectorized_data.width,
-        vectorized_data.height,
-        bg_str
+        vectorized_data.width, vectorized_data.height, bg_str
     )?;
 
     // Write curves

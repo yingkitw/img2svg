@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-146%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-168%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -37,7 +37,8 @@ Converting raster images to vector format is essential for:
 6. **Batch Processing**: Convert entire directories with `img2svg -i dir/ -o out/`
 7. **Large Image Safety**: Auto-resize images exceeding `--max-size` to prevent OOM
 8. **Fast LUT Bilateral Filter**: Precomputed range-weight LUT with fixed-point arithmetic
-9. **Flexible Usage**: CLI tool, Rust library, and MCP server
+9. **Image filter toolkit**: Optional building blocks (Canny, morphology, CLAHE, unsharp mask, thresholding, color ops) for custom preprocessing or experiments
+10. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Examples & Quality
 
@@ -166,14 +167,22 @@ img2svg = "0.1"
 
 ### MCP Server
 
+The MCP binary is built from the same crate as the CLI (no separate directory):
+
 ```bash
-cd mcp-server
+git clone https://github.com/yingkitw/img2svg.git
+cd img2svg
 cargo install --path .
+# installs img2svg and img2svg-mcp
 ```
 
 ## Usage
 
 ### CLI Tool
+
+The CLI uses the **enhanced Bézier pipeline** by default (same as the `vectorize_enhanced` API). Pass **`--original`** to use the legacy pipeline (median-cut, RDP, line segments) and to apply `--threshold`, `--smooth`, `--hierarchical`, and `--advanced` as documented below.
+
+**Supported inputs** (via the `image` crate): PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld.
 
 ```bash
 # Basic conversion
@@ -202,48 +211,56 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--input` | `-i` | *required* | Input image file or directory (batch mode) |
 | `--output` | `-o` | auto | Output SVG file or directory |
 | `--max-size` | | 4096 | Auto-resize images exceeding this dimension (prevents OOM) |
-| `--preprocess` | `-p` | false | Apply edge-preserving smoothing and color reduction (great for photos) |
-| `--colors` | `-c` | 16 | Number of colors for quantization (1-64) |
-| `--threshold` | `-t` | 0.1 | Edge detection threshold (0.0-1.0) |
-| `--smooth` | `-s` | 5 | Path smoothing level (0-10) |
-| `--original` | | false | Use original pipeline (line segments, RDP) instead of default Bézier |
-| `--hierarchical` | | false | Enable hierarchical decomposition (original pipeline only) |
-| `--advanced` | `-a` | false | Use advanced SVG generation (original pipeline only) |
+| `--preprocess` | `-p` | false | Extra edge-preserving smoothing and color reduction **before** vectorization (recommended for photos) |
+| `--colors` | `-c` | 16 | Target palette size for quantization (default pipeline and `--original`) |
+| `--threshold` | `-t` | 0.1 | Edge detection threshold (0.0–1.0); **`--original` only** |
+| `--smooth` | `-s` | 5 | Path smoothing level (0–10); **`--original` only** |
+| `--original` | | false | Legacy pipeline: median-cut, marching squares, RDP, line-segment SVG |
+| `--hierarchical` | | false | Hierarchical decomposition; **`--original` only** |
+| `--advanced` | `-a` | false | Layered SVG output; **`--original` only** |
+
+The default enhanced pipeline tunes smoothing and edge-aware quantization internally (`EnhancedOptions`); use **`--original`** if you need direct control via `--threshold` and `--smooth`.
 
 ### Rust Library
 
+There are two conversion paths:
+
+- **`convert` / `convert_to_svg_string`** — legacy pipeline (`vectorize` + `generate_svg`), controlled by `ConversionOptions` (same behavior as CLI **`--original`**).
+- **`vectorize_enhanced` + `write_enhanced_svg` / `generate_enhanced_svg`** — default high-quality pipeline (Bézier fitting, edge-aware quantization); matches the **CLI without `--original`**.
+
 ```rust
-use img2svg::{convert, ConversionOptions};
+use img2svg::{
+    convert, convert_to_svg_string, load_image, ConversionOptions,
+    vectorize_enhanced, write_enhanced_svg, EnhancedOptions,
+};
 use std::path::Path;
 
-// Simple conversion with defaults
+// Legacy pipeline (CLI equivalent: --original)
 let options = ConversionOptions::default();
-convert(
-    Path::new("input.png"),
-    Path::new("output.svg"),
-    &options
-)?;
+convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 
-// Custom options for better quality
-let options = ConversionOptions {
-    num_colors: 32,
-    smooth_level: 7,
-    threshold: 0.05,
+// Default / enhanced pipeline (CLI default)
+let image = load_image(Path::new("input.png"))?;
+let opts = EnhancedOptions {
+    num_colors: 16,
     ..Default::default()
 };
-convert(Path::new("photo.jpg"), Path::new("photo.svg"), &options)?;
+let data = vectorize_enhanced(&image, &opts)?;
+write_enhanced_svg(&data, Path::new("output.svg"))?;
 
-// Low-detail conversion for simple graphics
-let options = ConversionOptions {
-    num_colors: 8,
-    smooth_level: 2,
-    ..Default::default()
-};
+// In-memory SVG string (legacy pipeline only)
+let svg = convert_to_svg_string(&image, &options)?;
 ```
+
+#### Image filters (optional)
+
+The `image_filters` module is re-exported at the crate root for preprocessing and experimentation: median filter, Prewitt/Roberts edges, Canny, morphology, Otsu/adaptive thresholding, CLAHE, gamma, unsharp mask, emboss, sepia, and related color helpers. Compose these on `ImageData` before calling `vectorize_enhanced` or `convert`.
 
 ### MCP Server
 
 The MCP (Model Context Protocol) server is built into the same codebase and allows AI assistants (like Claude Desktop) to convert images to SVG directly.
+
+**Note:** The MCP tool invokes the library’s **`convert` / `ConversionOptions`** path (legacy pipeline: median-cut, RDP, line-segment SVG)—the same knobs as **`img2svg --original`**. It does **not** currently call the default CLI enhanced Bézier pipeline; use the **`img2svg` binary** for that behavior.
 
 #### Installation
 

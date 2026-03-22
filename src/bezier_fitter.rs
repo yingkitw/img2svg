@@ -354,8 +354,14 @@ impl BezierFitter {
             let dx = end.x - start.x;
             let dy = end.y - start.y;
             (
-                Point { x: start.x + dx / 3.0, y: start.y + dy / 3.0 },
-                Point { x: start.x + 2.0 * dx / 3.0, y: start.y + 2.0 * dy / 3.0 },
+                Point {
+                    x: start.x + dx / 3.0,
+                    y: start.y + dy / 3.0,
+                },
+                Point {
+                    x: start.x + 2.0 * dx / 3.0,
+                    y: start.y + 2.0 * dy / 3.0,
+                },
             )
         } else {
             let inv_det = 1.0 / det;
@@ -371,7 +377,12 @@ impl BezierFitter {
             )
         };
 
-        BezierCurve { start, control1, control2, end }
+        BezierCurve {
+            start,
+            control1,
+            control2,
+            end,
+        }
     }
 
     fn chord_length_parameterize(&self, points: &[Point]) -> Vec<f64> {
@@ -415,8 +426,14 @@ impl BezierFitter {
         let dy = end.y - start.y;
         BezierCurve {
             start: start.clone(),
-            control1: Point { x: start.x + dx / 3.0, y: start.y + dy / 3.0 },
-            control2: Point { x: start.x + 2.0 * dx / 3.0, y: start.y + 2.0 * dy / 3.0 },
+            control1: Point {
+                x: start.x + dx / 3.0,
+                y: start.y + dy / 3.0,
+            },
+            control2: Point {
+                x: start.x + 2.0 * dx / 3.0,
+                y: start.y + 2.0 * dy / 3.0,
+            },
             end: end.clone(),
         }
     }
@@ -517,7 +534,11 @@ pub fn bezier_to_svg_path(curves: &[BezierCurve], closed: bool) -> String {
         return String::new();
     }
 
-    let mut path = format!("M{},{}", fmt_num(curves[0].start.x), fmt_num(curves[0].start.y));
+    let mut path = format!(
+        "M{},{}",
+        fmt_num(curves[0].start.x),
+        fmt_num(curves[0].start.y)
+    );
 
     let mut i = 0;
     while i < curves.len() {
@@ -559,9 +580,12 @@ pub fn bezier_to_svg_path(curves: &[BezierCurve], closed: bool) -> String {
         } else {
             path.push_str(&format!(
                 "C{},{} {},{} {},{}",
-                fmt_num(curve.control1.x), fmt_num(curve.control1.y),
-                fmt_num(curve.control2.x), fmt_num(curve.control2.y),
-                fmt_num(curve.end.x), fmt_num(curve.end.y),
+                fmt_num(curve.control1.x),
+                fmt_num(curve.control1.y),
+                fmt_num(curve.control2.x),
+                fmt_num(curve.control2.y),
+                fmt_num(curve.end.x),
+                fmt_num(curve.end.y),
             ));
             i += 1;
         }
@@ -583,8 +607,12 @@ fn is_linear_curve(curve: &BezierCurve) -> bool {
     if len < 0.5 {
         return true;
     }
-    let d1 = ((curve.control1.y - curve.start.y) * dx - (curve.control1.x - curve.start.x) * dy).abs() / len;
-    let d2 = ((curve.control2.y - curve.start.y) * dx - (curve.control2.x - curve.start.x) * dy).abs() / len;
+    let d1 = ((curve.control1.y - curve.start.y) * dx - (curve.control1.x - curve.start.x) * dy)
+        .abs()
+        / len;
+    let d2 = ((curve.control2.y - curve.start.y) * dx - (curve.control2.x - curve.start.x) * dy)
+        .abs()
+        / len;
     d1 < 1.0 && d2 < 1.0
 }
 
@@ -615,10 +643,7 @@ mod tests {
     #[test]
     fn test_fit_path_two_points() {
         let fitter = BezierFitter::new(2.0);
-        let points = vec![
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 10.0, y: 10.0 },
-        ];
+        let points = vec![Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 10.0 }];
         let curves = fitter.fit_path(&points, false);
         assert_eq!(curves.len(), 1);
     }
@@ -629,7 +654,10 @@ mod tests {
         let points: Vec<Point> = (0..=20)
             .map(|i| {
                 let t = i as f64 / 20.0 * std::f64::consts::PI;
-                Point { x: t.cos() * 50.0 + 50.0, y: t.sin() * 50.0 }
+                Point {
+                    x: t.cos() * 50.0 + 50.0,
+                    y: t.sin() * 50.0,
+                }
             })
             .collect();
         let curves = fitter.fit_path(&points, false);

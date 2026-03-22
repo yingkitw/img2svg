@@ -56,7 +56,10 @@ pub fn vectorize(
     let total_pixels = width * height;
 
     // First color (largest area) becomes the background rect
-    let background_color = color_list.first().map(|(c, _)| *c).unwrap_or((255, 255, 255, 255));
+    let background_color = color_list
+        .first()
+        .map(|(c, _)| *c)
+        .unwrap_or((255, 255, 255, 255));
 
     for (color, pixels) in &color_list {
         // Skip background — it will be a rect in the SVG
@@ -94,10 +97,25 @@ pub fn vectorize(
             // Snap points near image edges to exact boundary AFTER smoothing/simplification
             // so smoothing can't pull boundary points away from the edge.
             let snap = 4.0;
-            let mut snapped: Vec<Point> = simplified.into_iter().map(|p| Point {
-                x: if p.x < snap { 0.0 } else if p.x > w - snap { w } else { p.x },
-                y: if p.y < snap { 0.0 } else if p.y > h - snap { h } else { p.y },
-            }).collect();
+            let mut snapped: Vec<Point> = simplified
+                .into_iter()
+                .map(|p| Point {
+                    x: if p.x < snap {
+                        0.0
+                    } else if p.x > w - snap {
+                        w
+                    } else {
+                        p.x
+                    },
+                    y: if p.y < snap {
+                        0.0
+                    } else if p.y > h - snap {
+                        h
+                    } else {
+                        p.y
+                    },
+                })
+                .collect();
             // Remove consecutive duplicate points created by snapping
             snapped.dedup_by(|a, b| (a.x - b.x).abs() < 0.1 && (a.y - b.y).abs() < 0.1);
             // Re-check area after snapping — some paths collapse to near-zero
@@ -128,11 +146,7 @@ pub fn vectorize(
 /// Produces sub-pixel contours at the boundary between true/false cells.
 /// The grid has (width+1) x (height+1) vertices; each cell (x,y) corresponds
 /// to pixel (x,y). A cell is "inside" if mask[y*width+x] is true.
-pub fn marching_squares_contours(
-    mask: &[bool],
-    width: usize,
-    height: usize,
-) -> Vec<Vec<Point>> {
+pub fn marching_squares_contours(mask: &[bool], width: usize, height: usize) -> Vec<Vec<Point>> {
     // Pixel (px, py) occupies the square [px, px+1] x [py, py+1].
     // We build a grid of (width+2) x (height+2) cells so that the image pixels
     // map to cells [1..width] x [1..height], with a 1-cell padding of "outside"
@@ -176,10 +190,10 @@ pub fn marching_squares_contours(
     let h = height as f64;
     let edge_point = move |cx: usize, cy: usize, side: u8| -> Point {
         let (x, y) = match side {
-            0 => (cx as f64 + 0.5, cy as f64),         // top edge midpoint in grid
-            1 => ((cx + 1) as f64, cy as f64 + 0.5),   // right
-            2 => (cx as f64 + 0.5, (cy + 1) as f64),   // bottom
-            3 => (cx as f64, cy as f64 + 0.5),         // left
+            0 => (cx as f64 + 0.5, cy as f64), // top edge midpoint in grid
+            1 => ((cx + 1) as f64, cy as f64 + 0.5), // right
+            2 => (cx as f64 + 0.5, (cy + 1) as f64), // bottom
+            3 => (cx as f64, cy as f64 + 0.5), // left
             _ => unreachable!(),
         };
         // Convert grid coords to pixel coords: subtract 1 (grid offset) + 0.5 = shift by -0.5
@@ -197,21 +211,21 @@ pub fn marching_squares_contours(
     let case_edges = |case: u8| -> Vec<(u8, u8)> {
         match case {
             0 | 15 => vec![],
-            1  => vec![(2, 3)],
-            2  => vec![(1, 2)],
-            3  => vec![(1, 3)],
-            4  => vec![(0, 1)],
-            5  => vec![(0, 1), (2, 3)], // saddle
-            6  => vec![(0, 2)],
-            7  => vec![(0, 3)],
-            8  => vec![(3, 0)],
-            9  => vec![(2, 0)],
+            1 => vec![(2, 3)],
+            2 => vec![(1, 2)],
+            3 => vec![(1, 3)],
+            4 => vec![(0, 1)],
+            5 => vec![(0, 1), (2, 3)], // saddle
+            6 => vec![(0, 2)],
+            7 => vec![(0, 3)],
+            8 => vec![(3, 0)],
+            9 => vec![(2, 0)],
             10 => vec![(3, 0), (1, 2)], // saddle
             11 => vec![(1, 0)],
             12 => vec![(3, 1)],
             13 => vec![(2, 1)],
             14 => vec![(3, 2)],
-            _  => vec![],
+            _ => vec![],
         }
     };
 
@@ -227,10 +241,10 @@ pub fn marching_squares_contours(
 
     let neighbor_cell = move |cx: usize, cy: usize, side: u8| -> Option<(usize, usize)> {
         match side {
-            0 if cy > 0          => Some((cx, cy - 1)),
+            0 if cy > 0 => Some((cx, cy - 1)),
             1 if cx + 1 < grid_w => Some((cx + 1, cy)),
             2 if cy + 1 < grid_h => Some((cx, cy + 1)),
-            3 if cx > 0          => Some((cx - 1, cy)),
+            3 if cx > 0 => Some((cx - 1, cy)),
             _ => None,
         }
     };
@@ -270,7 +284,8 @@ pub fn marching_squares_contours(
                         let nedges = case_edges(ncase);
 
                         // Find the edge pair that enters from next_entry_side
-                        if let Some(&(ne, nx)) = nedges.iter().find(|&&(e, _)| e == next_entry_side) {
+                        if let Some(&(ne, nx)) = nedges.iter().find(|&&(e, _)| e == next_entry_side)
+                        {
                             if (ncx, ncy, ne) == start_key {
                                 break; // Closed contour
                             }

@@ -51,7 +51,12 @@ pub fn resize_if_needed(image_data: ImageData, max_size: u32) -> ImageData {
         }
     }
 
-    let resized = image::imageops::resize(&rgba_img, new_w, new_h, image::imageops::FilterType::Lanczos3);
+    let resized = image::imageops::resize(
+        &rgba_img,
+        new_w,
+        new_h,
+        image::imageops::FilterType::Lanczos3,
+    );
 
     let pixels: Vec<RGBA8> = resized
         .pixels()
@@ -145,9 +150,12 @@ pub fn box_max_range(colors: &[(u8, u8, u8)]) -> u16 {
     let (mut gmin, mut gmax) = (255u8, 0u8);
     let (mut bmin, mut bmax) = (255u8, 0u8);
     for &(r, g, b) in colors {
-        rmin = rmin.min(r); rmax = rmax.max(r);
-        gmin = gmin.min(g); gmax = gmax.max(g);
-        bmin = bmin.min(b); bmax = bmax.max(b);
+        rmin = rmin.min(r);
+        rmax = rmax.max(r);
+        gmin = gmin.min(g);
+        gmax = gmax.max(g);
+        bmin = bmin.min(b);
+        bmax = bmax.max(b);
     }
     let rr = (rmax - rmin) as u16;
     let gr = (gmax - gmin) as u16;
@@ -160,9 +168,12 @@ pub fn split_box(mut colors: Vec<(u8, u8, u8)>) -> (Vec<(u8, u8, u8)>, Vec<(u8, 
     let (mut gmin, mut gmax) = (255u8, 0u8);
     let (mut bmin, mut bmax) = (255u8, 0u8);
     for &(r, g, b) in &colors {
-        rmin = rmin.min(r); rmax = rmax.max(r);
-        gmin = gmin.min(g); gmax = gmax.max(g);
-        bmin = bmin.min(b); bmax = bmax.max(b);
+        rmin = rmin.min(r);
+        rmax = rmax.max(r);
+        gmin = gmin.min(g);
+        gmax = gmax.max(g);
+        bmin = bmin.min(b);
+        bmax = bmax.max(b);
     }
     let rr = rmax - rmin;
     let gr = gmax - gmin;

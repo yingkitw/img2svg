@@ -12,8 +12,10 @@ pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Res
     writeln!(
         file,
         r#"<svg width="{}" height="{}" viewBox="0 0 {} {}" xmlns="http://www.w3.org/2000/svg">"#,
-        vectorized_data.width, vectorized_data.height,
-        vectorized_data.width, vectorized_data.height
+        vectorized_data.width,
+        vectorized_data.height,
+        vectorized_data.width,
+        vectorized_data.height
     )?;
     writeln!(
         file,
