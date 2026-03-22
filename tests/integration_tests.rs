@@ -1,4 +1,8 @@
 // Integration tests for img2svg
+use img2svg::{
+    convert, convert_to_svg_string, generate_enhanced_svg, vectorize_enhanced, write_enhanced_svg,
+    ConversionOptions, EnhancedOptions,
+};
 use img2svg::image_processor::{load_image, quantize_colors};
 use img2svg::svg_generator::{generate_svg, generate_svg_advanced};
 use img2svg::vectorizer::vectorize;
@@ -256,4 +260,116 @@ fn test_svg_output_format() {
     // Cleanup
     let _ = fs::remove_file(&test_img);
     let _ = fs::remove_file(&test_svg);
+}
+
+#[test]
+fn test_enhanced_pipeline_checkerboard() {
+    let test_img = PathBuf::from("/tmp/img2svg_enhanced_checker.png");
+    let test_svg = PathBuf::from("/tmp/img2svg_enhanced_checker.svg");
+
+    create_test_png(&test_img, 40, 40, "checkerboard");
+
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 4,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("vectorize_enhanced");
+    assert_eq!(data.width, 40);
+    assert_eq!(data.height, 40);
+
+    write_enhanced_svg(&data, &test_svg).expect("write_enhanced_svg");
+    let svg = fs::read_to_string(&test_svg).expect("read svg");
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("xmlns=\"http://www.w3.org/2000/svg\""));
+    assert!(svg.contains("</svg>"));
+
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_svg);
+}
+
+#[test]
+fn test_generate_enhanced_svg_string() {
+    let test_img = PathBuf::from("/tmp/img2svg_enhanced_string.png");
+    create_test_png(&test_img, 32, 32, "solid");
+
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 2,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("vectorize_enhanced");
+    let svg = generate_enhanced_svg(&data);
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("viewBox=\"0 0 32 32\""));
+
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_convert_legacy_writes_svg() {
+    let test_img = PathBuf::from("/tmp/img2svg_lib_convert.png");
+    let test_svg = PathBuf::from("/tmp/img2svg_lib_convert.svg");
+
+    create_test_png(&test_img, 48, 48, "circle");
+
+    let options = ConversionOptions {
+        num_colors: 8,
+        smooth_level: 3,
+        threshold: 0.1,
+        hierarchical: false,
+        advanced: false,
+    };
+    convert(&test_img, &test_svg, &options).expect("convert");
+
+    let svg = fs::read_to_string(&test_svg).expect("read");
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("</svg>"));
+
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_svg);
+}
+
+#[test]
+fn test_convert_to_svg_string_legacy() {
+    let test_img = PathBuf::from("/tmp/img2svg_convert_str.png");
+    create_test_png(&test_img, 24, 24, "checkerboard");
+
+    let image_data = load_image(&test_img).expect("load");
+    let options = ConversionOptions {
+        num_colors: 2,
+        smooth_level: 0,
+        threshold: 0.1,
+        hierarchical: false,
+        advanced: false,
+    };
+    let svg = convert_to_svg_string(&image_data, &options).expect("convert_to_svg_string");
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("width=\"24\""));
+    assert!(svg.contains("height=\"24\""));
+
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_enhanced_auto_color_count_zero() {
+    let test_img = PathBuf::from("/tmp/img2svg_enhanced_auto_k.png");
+    create_test_png(&test_img, 20, 20, "gradient");
+
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 0,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("auto k");
+    assert_eq!(data.width, 20);
+    assert_eq!(data.height, 20);
+
+    let svg = generate_enhanced_svg(&data);
+    assert!(svg.contains("<svg"));
+
+    let _ = fs::remove_file(&test_img);
 }

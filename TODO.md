@@ -20,9 +20,11 @@
 - [x] Unit tests for image_processor (13 tests)
 - [x] Unit tests for vectorizer (35 tests)
 - [x] Unit tests for svg_generator (20 tests)
-- [x] Integration tests (9 tests)
+- [x] Integration tests (14 tests): legacy pipeline, **enhanced pipeline** (`vectorize_enhanced` / `write_enhanced_svg` / `generate_enhanced_svg`), **`convert` / `convert_to_svg_string`**, auto `num_colors`
+- [x] CLI unit tests: `is_supported_image` extension checks (3 tests, `src/cli.rs`)
+- [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (6 tests, `src/mcp.rs`)
 - [x] Library API tests (1 test)
-- [x] Total: 160 tests passing
+- [x] Run `cargo test` for full counts (lib + binary targets + `img2svg-mcp` + integration + doctests)
 
 ### Project Structure
 - [x] Library API (lib.rs)

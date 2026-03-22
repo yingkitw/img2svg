@@ -58,3 +58,30 @@ pub fn is_supported_image(path: &std::path::Path) -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_supported_image;
+    use std::path::Path;
+
+    #[test]
+    fn supported_extensions_lowercase() {
+        assert!(is_supported_image(Path::new("x.png")));
+        assert!(is_supported_image(Path::new("x.jpeg")));
+        assert!(is_supported_image(Path::new("x.webp")));
+        assert!(is_supported_image(Path::new("x.tiff")));
+    }
+
+    #[test]
+    fn supported_extensions_uppercase() {
+        assert!(is_supported_image(Path::new("photo.PNG")));
+        assert!(is_supported_image(Path::new("photo.JPG")));
+    }
+
+    #[test]
+    fn unsupported_or_missing_extension() {
+        assert!(!is_supported_image(Path::new("readme")));
+        assert!(!is_supported_image(Path::new("file.txt")));
+        assert!(!is_supported_image(Path::new("noext")));
+    }
+}

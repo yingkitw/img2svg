@@ -234,3 +234,106 @@ fn main() {
     let server = Img2SvgMcpServer;
     server.run();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Img2SvgMcpServer;
+    use serde_json::json;
+
+    #[test]
+    fn initialize_returns_server_info() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_initialize(json!({}), json!(1));
+        assert!(r.error.is_none());
+        let res = r.result.unwrap();
+        assert_eq!(res["protocolVersion"], "2024-11-05");
+        assert_eq!(res["serverInfo"]["name"], "img2svg");
+    }
+
+    #[test]
+    fn tools_list_exposes_convert_tool() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_list(json!(42));
+        assert!(r.error.is_none());
+        let body = r.result.unwrap();
+        let tools = body["tools"].as_array().expect("tools array");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "convert_image_to_svg");
+        let required = tools[0]["inputSchema"]["required"]
+            .as_array()
+            .expect("required");
+        assert!(required.contains(&json!("input_path")));
+    }
+
+    #[test]
+    fn tools_call_rejects_non_object_arguments() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!("not-an-object"),
+            },
+            json!(1),
+        );
+        assert!(r.result.is_none());
+        let err = r.error.unwrap();
+        assert_eq!(err.code, -32602);
+    }
+
+    #[test]
+    fn tools_call_missing_paths_returns_error() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({ "num_colors": 8 }),
+            },
+            json!(2),
+        );
+        assert!(r.result.is_none());
+        assert_eq!(r.error.unwrap().code, -32602);
+    }
+
+    #[test]
+    fn tools_call_unknown_tool() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "nope".to_string(),
+                arguments: json!({}),
+            },
+            json!(3),
+        );
+        assert_eq!(r.error.unwrap().code, -32601);
+    }
+
+    #[test]
+    fn tools_call_convert_succeeds_for_example_png() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_convert_test.svg");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                }),
+            },
+            json!(99),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let text = std::fs::read_to_string(&out).expect("read output");
+        assert!(text.contains("<svg"));
+        let _ = std::fs::remove_file(&out);
+    }
+
+}
