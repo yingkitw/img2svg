@@ -32,7 +32,7 @@ pub fn vectorize(
     num_colors: usize,
     _threshold: f64,
     smooth_level: u8,
-    _hierarchical: bool,
+    hierarchical: bool,
 ) -> Result<VectorizedData> {
     let quantized = quantize_colors(image_data, num_colors)?;
     let width = quantized.width as usize;
@@ -73,7 +73,14 @@ pub fn vectorize(
         }
 
         // Trace contours using marching squares on the mask
-        let contours = marching_squares_contours(&mask, width, height);
+        let mut contours = marching_squares_contours(&mask, width, height);
+
+        // In non-hierarchical mode, discard hole contours (positive signed area)
+        // to avoid filling holes with the same color. Outer boundaries have
+        // negative signed area (CW winding from marching squares).
+        if !hierarchical {
+            contours.retain(|c| signed_polygon_area(c) <= 0.5);
+        }
 
         // Collect all sub-paths for this color into one Curve with merged points
         let mut color_subpaths: Vec<Vec<Point>> = Vec::new();
@@ -322,6 +329,64 @@ fn polygon_area(points: &[Point]) -> f64 {
         area -= points[j].x * points[i].y;
     }
     area.abs() / 2.0
+}
+
+/// Signed polygon area: positive for CCW, negative for CW.
+fn signed_polygon_area(points: &[Point]) -> f64 {
+    if points.len() < 3 {
+        return 0.0;
+    }
+    let mut area = 0.0;
+    for i in 0..points.len() {
+        let j = (i + 1) % points.len();
+        area += points[i].x * points[j].y;
+        area -= points[j].x * points[i].y;
+    }
+    area / 2.0
+}
+
+/// Ray-casting point-in-polygon test.
+fn point_in_polygon(point: &Point, polygon: &[Point]) -> bool {
+    let mut inside = false;
+    let n = polygon.len();
+    if n < 3 {
+        return false;
+    }
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (xi, yi) = (polygon[i].x, polygon[i].y);
+        let (xj, yj) = (polygon[j].x, polygon[j].y);
+        let intersect =
+            ((yi > point.y) != (yj > point.y)) && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+        if intersect {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// Determine whether a set of subpaths contains holes (a subpath inside another).
+pub fn has_holes(subpaths: &[Vec<Point>]) -> bool {
+    if subpaths.len() < 2 {
+        return false;
+    }
+    for (i, inner) in subpaths.iter().enumerate() {
+        if inner.len() < 3 {
+            continue;
+        }
+        let test_point = &inner[0];
+        for (j, outer) in subpaths.iter().enumerate() {
+            if i == j || outer.len() < 3 {
+                continue;
+            }
+            let outer_area = polygon_area(outer);
+            let inner_area = polygon_area(inner);
+            if outer_area > inner_area && point_in_polygon(test_point, outer) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Light Gaussian smoothing that doesn't add points (unlike Chaikin).

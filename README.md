@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-182%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-328%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -37,8 +37,11 @@ Converting raster images to vector format is essential for:
 6. **Batch Processing**: Convert entire directories with `img2svg -i dir/ -o out/`
 7. **Large Image Safety**: Auto-resize images exceeding `--max-size` to prevent OOM
 8. **Fast LUT Bilateral Filter**: Precomputed range-weight LUT with fixed-point arithmetic
-9. **Image filter toolkit**: Optional building blocks (Canny, morphology, CLAHE, unsharp mask, thresholding, color ops) for custom preprocessing or experiments
-10. **Flexible Usage**: CLI tool, Rust library, and MCP server
+9. **Image filter toolkit**: Optional building blocks (Canny, morphology, CLAHE, unsharp mask, high-boost, adaptive tone mapping, weighted median, thresholding, color ops) for custom preprocessing or experiments
+10. **Transparency Support**: Alpha channel preserved as `fill-opacity`/`stroke-opacity` in SVG output
+11. **Hierarchical Decomposition**: `--hierarchical` mode preserves hole contours with `fill-rule="evenodd"`
+12. **Progress Logging**: Stage-by-stage progress output for large image conversions
+13. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Examples & Quality
 
@@ -216,10 +219,10 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--threshold` | `-t` | 0.1 | Edge detection threshold (0.0–1.0); **`--original` only** |
 | `--smooth` | `-s` | 5 | Path smoothing level (0–10); **`--original` only** |
 | `--original` | | false | Legacy pipeline: median-cut, marching squares, RDP, line-segment SVG |
-| `--hierarchical` | | false | Hierarchical decomposition; **`--original` only** |
+| `--hierarchical` | | false | Hierarchical decomposition (preserves holes with evenodd fill-rule); **`--original` only** |
 | `--advanced` | `-a` | false | Layered SVG output; **`--original` only** |
 
-The default enhanced pipeline tunes smoothing and edge-aware quantization internally (`EnhancedOptions`); use **`--original`** if you need direct control via `--threshold` and `--smooth`.
+The default enhanced pipeline tunes smoothing and edge-aware quantization internally (`EnhancedOptions`); use **`--original`** if you need direct control via `--threshold`, `--smooth`, and `--hierarchical`.
 
 ### Rust Library
 
@@ -329,7 +332,7 @@ img2svg uses a sophisticated multi-stage pipeline (default Bézier pipeline):
 9. **Visvalingam-Whyatt Simplification**: Area-based point removal with corner preservation
 10. **Edge Snapping + Corner Injection**: Points snapped to image edges; 90° corners injected at edge transitions
 11. **Cubic Bézier Fitting**: Least-squares fit with Newton-Raphson reparameterization + G1 continuity
-12. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes
+12. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes, alpha channel support, evenodd fill-rule for holes
 
 The original pipeline (`--original`) uses median-cut quantization, RDP simplification, and line-segment SVG paths.
 

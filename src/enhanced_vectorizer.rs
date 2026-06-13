@@ -98,6 +98,7 @@ pub fn vectorize_enhanced(
     // Detect if image has many colors (photos, gradients)
     let n_colors = count_distinct_colors(image_data);
     let is_many_colors = n_colors > 16;
+    eprintln!("    Detected {} unique colors", n_colors);
 
     // Determine target color count
     let target_colors = if options.num_colors > 0 {
@@ -107,9 +108,11 @@ pub fn vectorize_enhanced(
     } else {
         n_colors.min(64)
     };
+    eprintln!("    Target palette: {} colors", target_colors);
 
     // Optional preprocessing (bilateral filter for photos)
     let preprocessed = if options.preprocess && is_many_colors {
+        eprintln!("    Applying bilateral filter preprocessing...");
         let opts = PreprocessOptions::photo();
         preprocess(image_data, &opts)?
     } else {
@@ -117,6 +120,7 @@ pub fn vectorize_enhanced(
     };
 
     // Edge detection + edge-aware quantization (k-means++ with perceptual distance)
+    eprintln!("    Detecting edges and quantizing...");
     let edges = detect_edges_sobel(&preprocessed);
     // Detect if image is a photo (continuous tones) vs complex graphic (many distinct colors).
     // Photos: many colors, smooth gradients → fewer smoothing passes, bilateral preprocess.
@@ -202,6 +206,8 @@ pub fn vectorize_enhanced(
     };
     // Minimum polygon area: larger for photos to skip tiny noise regions
     let min_poly_area = if is_many_colors { 20.0 } else { 8.0 };
+
+    eprintln!("    Extracting contours for {} colors (bg excluded)...", color_list.len().saturating_sub(1));
 
     // For each color: build binary mask → marching squares → smooth → simplify → Bézier fit
     // Collect (display_color, pixel_count, contours) tuples for parallel processing
@@ -338,6 +344,7 @@ pub fn vectorize_enhanced(
 
     // Sort: largest regions first (back-to-front layering)
     enhanced_paths.sort_unstable_by(|a, b| b.area.cmp(&a.area));
+    eprintln!("    Generated {} paths", enhanced_paths.len());
 
     Ok(EnhancedVectorData {
         width: image_data.width,
@@ -457,9 +464,14 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
     // Background rect
     let bg = data.background_color;
     let bg_hex = format!("#{:02x}{:02x}{:02x}", bg.0, bg.1, bg.2);
+    let bg_opacity = if bg.3 < 255 {
+        format!(" fill-opacity=\"{}\"", (bg.3 as f64 / 255.0 * 100.0).round() / 100.0)
+    } else {
+        String::new()
+    };
     svg.push_str(&format!(
-        "  <rect width=\"{}\" height=\"{}\" fill=\"{}\"/>\n",
-        data.width, data.height, bg_hex
+        "  <rect width=\"{}\" height=\"{}\" fill=\"{}\"{} />\n",
+        data.width, data.height, bg_hex, bg_opacity
     ));
 
     // Group consecutive same-color paths
@@ -491,9 +503,16 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
         }
 
         // Gap-filling stroke matching fill color
+        let alpha = group.paths.first().map(|p| p.color.3).unwrap_or(255);
+        let opacity_attr = if alpha < 255 {
+            let op = (alpha as f64 / 255.0 * 100.0).round() / 100.0;
+            format!(" fill-opacity=\"{}\" stroke-opacity=\"{}\"", op, op)
+        } else {
+            String::new()
+        };
         svg.push_str(&format!(
-            "  <path fill=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\" d=\"{}\"/>\n",
-            color_hex, color_hex, path_data
+            "  <path fill=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"{} d=\"{}\"/>\n",
+            color_hex, color_hex, opacity_attr, path_data
         ));
     }
 
@@ -796,6 +815,31 @@ mod tests {
         let svg_yes = generate_enhanced_svg(&result_yes);
         assert!(svg_no.contains("<path"));
         assert!(svg_yes.contains("<path"));
+    }
+
+    #[test]
+    fn test_enhanced_svg_with_alpha() {
+        let paths = vec![
+            EnhancedPath {
+                curves: vec![BezierCurve {
+                    start: Point { x: 0.0, y: 0.0 },
+                    control1: Point { x: 1.0, y: 1.0 },
+                    control2: Point { x: 2.0, y: 1.0 },
+                    end: Point { x: 3.0, y: 0.0 },
+                }],
+                color: (255, 0, 0, 128),
+                area: 100,
+                svg_override: None,
+            },
+        ];
+        let data = EnhancedVectorData {
+            width: 10,
+            height: 10,
+            background_color: (0, 0, 0, 64),
+            paths,
+        };
+        let svg = generate_enhanced_svg(&data);
+        assert!(svg.contains("fill-opacity=\"0.25\""));
     }
 
     #[test]

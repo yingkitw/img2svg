@@ -1,6 +1,6 @@
 [package]
 name = "img2svg"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2024"
 description = "A rust native image to SVG converter in CLI/MCP/Library"
 authors = ["Ying Kit WONG"]
@@ -22,7 +22,7 @@ petgraph = "0.6"
 thiserror = "1.0"
 anyhow = "1.0"
 rayon = "1.10"
-rand = "0.8"
+rand = "0.10"
 
 [features]
 default = []

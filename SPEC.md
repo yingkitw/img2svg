@@ -46,10 +46,11 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 2. **[Optional] Preprocess** → `preprocessor::preprocess` → Bilateral filter + color reduction
 3. **Quantize** → `image_processor::quantize_colors` → Median-cut algorithm
 4. **Group** → Group pixels by quantized color, sort by area (largest = background)
-5. **Contour** → `vectorizer::marching_squares_contours` → Per-color binary mask → sub-pixel contours
-6. **Smooth** → `vectorizer::smooth_boundary` → Gaussian neighbor averaging
-7. **Simplify** → `vectorizer::rdp_simplify` → Ramer-Douglas-Peucker with epsilon=2.0
-8. **SVG emit** → `svg_generator::generate_svg` → Background rect + merged line-segment paths
+5. **Contour** → `vectorizer::marching_squares_contours` → Per-color binary mask → sub-pixel contours (outer + hole contours)
+6. **Filter** → If not `--hierarchical`, discard hole contours (positive signed area) to avoid filling holes
+7. **Smooth** → `vectorizer::smooth_boundary` → Gaussian neighbor averaging
+8. **Simplify** → `vectorizer::rdp_simplify` → Ramer-Douglas-Peucker with epsilon=2.0
+9. **SVG emit** → `svg_generator::generate_svg` → Background rect + merged line-segment paths (with `fill-rule="evenodd"` when holes are present)
 
 ### Preprocessing Mode (--preprocess)
 Applied before quantization for photographs:
@@ -64,7 +65,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 262 tests passing (126 lib + 125 bin + 9 integration + 2 doctests)
+- ✅ 328 tests passing (169 lib + 137 bin + 6 MCP + 14 integration + 2 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -86,38 +87,50 @@ Applied before quantization for photographs:
 | BMP input | ✅ | Full support via image crate |
 | WebP input | ✅ | Full support via image crate |
 | TIFF input | ✅ | Full support via image crate |
-| Transparency/Alpha | ⚠️ | Preserved in pixel data, rendered as opaque in SVG |
+| Transparency/Alpha | ✅ | Preserved as `fill-opacity`/`stroke-opacity` in SVG |
 | CMYK colorspace | ❌ | Not supported (converts to RGB) |
 | Grayscale images | ✅ | Converted to RGB (R=G=B) |
 | Animated GIF | ❌ | First frame only |
 
 ## Test Suite
 
-### Unit Tests (160 total)
+### Unit Tests (306 total)
 - `image_processor_tests.rs`: 13 tests
   - Image data creation and validation
   - Color quantization with various parameters
   - Edge cases (empty, single color, zero colors)
   - Median-cut algorithm tests
-- `vectorizer_tests.rs`: 35 tests
+- `vectorizer_tests.rs`: 51 tests
   - Marching squares contour tracing
-  - Polygon area calculation
-  - Point-to-line distance
+  - Polygon area calculation (signed/unsigned)
+  - Point-in-polygon detection
+  - Hole detection (`has_holes`)
+  - Hierarchical vs non-hierarchical mode
   - RDP simplification
   - Boundary smoothing
   - Full vectorization pipeline
-- `svg_generator_tests.rs`: 20 tests
+- `svg_generator_tests.rs`: 24 tests
   - SVG generation with various inputs
+  - Alpha channel output (`fill-opacity`)
+  - Hierarchical evenodd fill-rule
   - Coordinate formatting
   - Subpath string creation
   - Multi-path handling
+- `image_filters/*`: ~140 tests across Canny, color ops, contrast, effects, enhancement, morphology, thresholding
+- `enhanced_vectorizer.rs`: 13 tests
 - `lib_tests.rs`: 1 test
   - Conversion options defaults
+- `cli.rs`: 3 tests
+  - Supported image extension checks
+- `mcp.rs`: 6 tests
+  - Server initialization, tool schema, validation, happy path
 
-### Integration Tests (9 total)
-- Full pipeline conversion tests
+### Integration Tests (14 total)
+- Full pipeline conversion tests (legacy + enhanced)
 - Test image creation (gradient, checkerboard, circle, solid)
 - SVG output validation
+- `convert_to_svg_string` round-trip
+- Enhanced pipeline with auto color count
 - Various color counts and smoothing levels
 - File size and dimension preservation
 
@@ -160,13 +173,15 @@ Recommended: img2svg -i lenna.png -o lenna.svg --preprocess -c 12
 ### Stable (v0.1.0)
 - `load_image`
 - `quantize_colors`
-- `vectorize`
-- `generate_svg`
+- `vectorize` (hierarchical mode fully functional)
+- `generate_svg` (alpha channel + evenodd fill-rule support)
 - `generate_svg_advanced`
 - `convert`
 - `convert_to_svg_string`
+- `vectorize_enhanced` / `write_enhanced_svg` / `generate_enhanced_svg`
+- Image filters (`median_filter`, `weighted_median_filter`, `CannyEdgeDetector`, `UnsharpMask`, `HighBoostFilter`, `HistogramEqualizer`, `CLAHE`, `AdaptiveToneMapper`, etc.)
 
 ### Experimental
 - `preprocess` API (may change parameters)
-- Hierarchical decomposition mode
 - Advanced SVG generation with layers
+- MCP server tool parameters

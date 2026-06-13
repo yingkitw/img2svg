@@ -1,13 +1,12 @@
 use crate::image_processor::Result;
-use crate::vectorizer::{Point, VectorizedData};
+use crate::vectorizer::{has_holes, Point, VectorizedData};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
 pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Result<()> {
     let mut file = File::create(output_path)?;
-    let bg = vectorized_data.background_color;
-    let bg_str = format!("#{:02x}{:02x}{:02x}", bg.0, bg.1, bg.2);
+    let (bg_str, bg_opacity) = color_with_alpha(vectorized_data.background_color);
 
     writeln!(
         file,
@@ -19,15 +18,12 @@ pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Res
     )?;
     writeln!(
         file,
-        r#"  <rect width="{}" height="{}" fill="{}"/>"#,
-        vectorized_data.width, vectorized_data.height, bg_str
+        r#"  <rect width="{}" height="{}" fill="{}"{}/>"#,
+        vectorized_data.width, vectorized_data.height, bg_str, bg_opacity
     )?;
 
     for curve in &vectorized_data.curves {
-        let color_str = format!(
-            "#{:02x}{:02x}{:02x}",
-            curve.color.0, curve.color.1, curve.color.2
-        );
+        let (color_str, opacity_attr) = color_with_alpha(curve.color);
 
         let path_str = if !curve.subpaths.is_empty() {
             create_multi_path_string(&curve.subpaths)
@@ -41,10 +37,15 @@ pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Res
             continue;
         }
 
+        let fill_rule = if has_holes(&curve.subpaths) {
+            r#" fill-rule="evenodd""#
+        } else {
+            ""
+        };
         writeln!(
             file,
-            r#"  <path d="{}" fill="{}" stroke="none"/>"#,
-            path_str, color_str
+            r#"  <path d="{}" fill="{}"{}{} stroke="none"/>"#,
+            path_str, color_str, opacity_attr, fill_rule
         )?;
     }
 
@@ -70,6 +71,17 @@ pub fn create_multi_path_string(subpaths: &[Vec<Point>]) -> String {
         path.push_str(&create_subpath_string(sp, true));
     }
     path
+}
+
+/// Return SVG hex color and optional fill-opacity attribute for (r,g,b,a).
+pub fn color_with_alpha(color: (u8, u8, u8, u8)) -> (String, String) {
+    let hex = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
+    if color.3 < 255 {
+        let opacity = (color.3 as f64 / 255.0 * 100.0).round() / 100.0;
+        (hex, format!(" fill-opacity=\"{}\"", opacity))
+    } else {
+        (hex, String::new())
+    }
 }
 
 /// Format a coordinate compactly: use integer if close to whole, else 1 decimal.

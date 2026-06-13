@@ -43,6 +43,18 @@ mod tests {
                 // All true
                 mask = vec![true; width * height];
             }
+            "donut" => {
+                // Outer square with inner hole
+                for y in 0..height {
+                    for x in 0..width {
+                        let in_outer = x >= width / 4 && x < 3 * width / 4
+                            && y >= height / 4 && y < 3 * height / 4;
+                        let in_inner = x >= 3 * width / 8 && x < 5 * width / 8
+                            && y >= 3 * height / 8 && y < 5 * height / 8;
+                        mask[y * width + x] = in_outer && !in_inner;
+                    }
+                }
+            }
             "empty" => {
                 // All false - already initialized
             }
@@ -488,5 +500,139 @@ mod tests {
         for curve in &vectorized.curves {
             assert_eq!(curve.color.3, 255); // All colors should have alpha 255
         }
+    }
+
+    // === Geometry helper tests ===
+
+    #[test]
+    fn test_signed_polygon_area_ccw_vs_cw() {
+        let ccw = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 1.0, y: 0.0 },
+            Point { x: 1.0, y: 1.0 },
+            Point { x: 0.0, y: 1.0 },
+        ];
+        // Note: marching squares produces CW outer boundaries
+        let cw = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 0.0, y: 1.0 },
+            Point { x: 1.0, y: 1.0 },
+            Point { x: 1.0, y: 0.0 },
+        ];
+        assert!(signed_polygon_area(&ccw) > 0.0);
+        assert!(signed_polygon_area(&cw) < 0.0);
+    }
+
+    #[test]
+    fn test_point_in_polygon() {
+        let square = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 10.0, y: 0.0 },
+            Point { x: 10.0, y: 10.0 },
+            Point { x: 0.0, y: 10.0 },
+        ];
+        assert!(point_in_polygon(&Point { x: 5.0, y: 5.0 }, &square));
+        assert!(!point_in_polygon(&Point { x: 15.0, y: 5.0 }, &square));
+        // Point on edge
+        assert!(point_in_polygon(&Point { x: 0.0, y: 5.0 }, &square));
+    }
+
+    #[test]
+    fn test_has_holes_detects_nested_subpaths() {
+        let outer = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 10.0, y: 0.0 },
+            Point { x: 10.0, y: 10.0 },
+            Point { x: 0.0, y: 10.0 },
+        ];
+        let inner = vec![
+            Point { x: 3.0, y: 3.0 },
+            Point { x: 3.0, y: 7.0 },
+            Point { x: 7.0, y: 7.0 },
+            Point { x: 7.0, y: 3.0 },
+        ];
+        assert!(has_holes(&[outer.clone(), inner.clone()]));
+        assert!(!has_holes(&[outer]));
+        assert!(!has_holes(&[inner]));
+    }
+
+    // === Hierarchical mode tests ===
+
+    #[test]
+    fn test_marching_squares_donut_produces_two_contours() {
+        let mask = create_test_mask(40, 40, "donut");
+        let contours = marching_squares_contours(&mask, 40, 40);
+        assert_eq!(contours.len(), 2, "Donut should produce outer + inner contour");
+        // Outer boundary has negative signed area (CW), inner (hole) has positive (CCW)
+        let areas: Vec<f64> = contours.iter().map(|c| signed_polygon_area(c)).collect();
+        let outer_count = areas.iter().filter(|&&a| a < 0.0).count();
+        let hole_count = areas.iter().filter(|&&a| a > 0.0).count();
+        assert_eq!(outer_count, 1, "Expected one outer boundary");
+        assert_eq!(hole_count, 1, "Expected one hole boundary");
+    }
+
+    #[test]
+    fn test_vectorize_non_hierarchical_filters_holes() {
+        let img = create_test_image(40, 40, {
+            let mut px = Vec::new();
+            for y in 0..40u32 {
+                for x in 0..40u32 {
+                    let in_outer = x >= 10 && x < 30 && y >= 10 && y < 30;
+                    let in_inner = x >= 15 && x < 25 && y >= 15 && y < 25;
+                    if in_outer && !in_inner {
+                        px.push(RGBA8::new(255, 0, 0, 255));
+                    } else {
+                        px.push(RGBA8::new(255, 255, 255, 255));
+                    }
+                }
+            }
+            px
+        });
+        // Non-hierarchical: should discard hole contour, keeping only outer
+        let result = vectorize(&img, 2, 0.1, 0, false).unwrap();
+        // White background is largest; red ring should be the only curve
+        assert!(
+            !result.curves.is_empty(),
+            "Expected at least one non-background curve"
+        );
+        // Find the non-background curve (not white)
+        let ring_curve = result
+            .curves
+            .iter()
+            .find(|c| c.color != (255, 255, 255, 255));
+        assert!(ring_curve.is_some(), "Expected a non-white curve for the ring");
+        // Only one subpath (outer boundary); hole was filtered out
+        assert_eq!(ring_curve.unwrap().subpaths.len(), 1);
+    }
+
+    #[test]
+    fn test_vectorize_hierarchical_keeps_holes() {
+        let img = create_test_image(40, 40, {
+            let mut px = Vec::new();
+            for y in 0..40u32 {
+                for x in 0..40u32 {
+                    let in_outer = x >= 10 && x < 30 && y >= 10 && y < 30;
+                    let in_inner = x >= 15 && x < 25 && y >= 15 && y < 25;
+                    if in_outer && !in_inner {
+                        px.push(RGBA8::new(255, 0, 0, 255));
+                    } else {
+                        px.push(RGBA8::new(255, 255, 255, 255));
+                    }
+                }
+            }
+            px
+        });
+        // Hierarchical: should keep both outer and hole contours
+        let result = vectorize(&img, 2, 0.1, 0, true).unwrap();
+        let ring_curve = result
+            .curves
+            .iter()
+            .find(|c| c.color != (255, 255, 255, 255));
+        assert!(ring_curve.is_some(), "Expected a non-white curve for the ring");
+        // Both outer and hole subpaths present
+        assert!(
+            ring_curve.unwrap().subpaths.len() >= 2,
+            "Expected at least 2 subpaths (outer + hole)"
+        );
     }
 }

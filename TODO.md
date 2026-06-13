@@ -72,17 +72,21 @@
 - [x] Large image auto-resize (`--max-size`, default 4096, Lanczos3)
 - [x] Recoloring from original image (average original pixels per quantized region)
 - [x] Fast LUT-based bilateral filter (precomputed range-weight LUT, fixed-point arithmetic)
+- [x] Handle transparency/alpha channel in SVG output (preserve as opacity)
+- [x] Add hierarchical decomposition mode (hole detection + evenodd fill-rule)
+- [x] Progress logging for large image conversions
+- [x] Weighted median filter
+- [x] High-boost filtering
+- [x] Adaptive tone mapping
+- [x] Rand 0.10 API compatibility fix (`rng()` / `random_range` / `random`)
 
 ## Pending 🚧
 
 ### Core Features
-- [ ] Handle transparency/alpha channel in SVG output (preserve as opacity)
-- [ ] Add hierarchical decomposition mode (flag exists, implementation incomplete)
 - [ ] SVG gradient detection for smoother gradient rendering
 - [ ] Support for CMYK color space input
 
 ### Performance
-- [ ] Progress logging for large image conversions
 - [ ] Incremental SVG generation for memory-constrained environments
 
 ### Input/Output
@@ -96,7 +100,6 @@
 - [ ] Support for custom preprocessing parameters in MCP
 
 ### Documentation
-- [ ] API reference documentation (rustdoc for all public functions)
 - [ ] More example images demonstrating different use cases
 - [ ] Performance benchmarks comparing original vs enhanced pipeline
 
@@ -112,7 +115,7 @@
 - [ ] Non-local means (NLM) denoising
 - [ ] Anisotropic diffusion (Perona-Malik)
 - [x] Median filter for salt-and-pepper noise
-- [ ] Weighted median filter
+- [x] Weighted median filter
 
 #### Edge Detection & Enhancement
 - [x] Canny edge detector (non-max suppression + hysteresis)
@@ -120,13 +123,13 @@
 - [x] Roberts cross-gradient operator
 - [x] Unsharp masking for sharpening
 - [x] Laplacian sharpening
-- [ ] High-boost filtering
+- [x] High-boost filtering
 
 #### Contrast & Tone Mapping
 - [x] Histogram equalization
 - [x] CLAHE (Contrast Limited Adaptive Histogram Equalization)
 - [x] Gamma correction
-- [ ] Adaptive tone mapping
+- [x] Adaptive tone mapping
 
 #### Thresholding & Segmentation
 - [x] Otsu thresholding

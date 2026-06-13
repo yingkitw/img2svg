@@ -6,11 +6,20 @@
 src/
 ├── main.rs                 # CLI entry point, single-file + batch mode orchestration
 ├── cli.rs                  # Clap-based argument parsing, is_supported_image()
-├── lib.rs                  # Library API with public exports
+├── lib.rs                  # Library API with public exports + rustdoc
 ├── image_processor.rs      # Image loading, auto-resize (Lanczos3), median-cut quantization
-├── vectorizer.rs           # Marching-squares contour tracing, smoothing, RDP (original)
-├── svg_generator.rs        # SVG file generation with merged subpaths per color (original)
+├── vectorizer.rs           # Marching-squares contour tracing, smoothing, RDP, hole detection
+├── svg_generator.rs        # SVG file generation with merged subpaths, alpha, evenodd fill-rule
 ├── preprocessor.rs         # Image preprocessing (LUT bilateral filter, color reduction)
+├── image_filters.rs        # Image filter re-exports + median/weighted median
+├── image_filters/          # Per-category filter implementations
+│   ├── canny.rs            # Canny edge detector
+│   ├── color_ops.rs        # Color temperature, saturation, HSL, LAB
+│   ├── contrast.rs         # Histogram equalization, CLAHE, adaptive tone mapping
+│   ├── effects.rs          # Emboss, edge glow, sepia, vignette
+│   ├── enhancement.rs      # Unsharp mask, Laplacian sharpen, high-boost, gamma
+│   ├── morphology.rs       # Erosion, dilation, opening, closing, top-hat
+│   └── thresholding.rs     # Otsu, adaptive thresholding
 ├── mcp.rs                  # MCP (Model Context Protocol) server
 ├── edge_detector.rs        # Sobel edge detection (enhanced pipeline)
 ├── enhanced_quantizer.rs   # K-means++ / k-means refinement, edge-aware quantization (enhanced)
@@ -53,6 +62,8 @@ PNG/JPEG → load_image → ImageData
          ↓
          per color: binary mask → marching_squares_contours → Vec<Vec<Point>>
          ↓
+         [Optional: filter hole contours (signed_polygon_area > 0) if !hierarchical]
+         ↓
          smooth_boundary (Gaussian averaging) → Vec<Point>
          ↓
          rdp_simplify (epsilon=2.0) → Vec<Point>
@@ -61,7 +72,7 @@ PNG/JPEG → load_image → ImageData
          ↓
          merge subpaths into Curve { subpaths, color }
          ↓
-         generate_svg → background rect + one <path> per color
+         generate_svg → background rect + one <path> per color (+ fill-rule="evenodd" for holes, alpha channel support)
 ```
 
 ### Default Pipeline (Bézier curves)
@@ -115,11 +126,16 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 
 ### Original Pipeline Algorithms
 - **Median-cut quantization**: Recursively splits color space along widest channel
-- **Marching squares**: Traces sub-pixel contours on binary mask per color
+- **Marching squares**: Traces sub-pixel contours on binary mask per color (outer boundaries + holes)
+- **Signed polygon area**: Distinguishes outer boundaries (CW, negative area) from holes (CCW, positive area)
+- **Hole filtering** (non-hierarchical): Discards hole contours to prevent incorrect hole filling
+- **Point-in-polygon**: Ray-casting test for `has_holes` detection
 - **Gaussian smoothing**: Neighbor averaging that preserves point count
 - **RDP simplification**: Ramer-Douglas-Peucker with epsilon=2.0
 - **Background detection**: Largest-area color becomes SVG rect (not traced)
 - **Subpath merging**: All contours of same color → single `<path>` with `M...Z` subpaths
+- **Evenodd fill-rule**: Applied when holes are present in hierarchical mode
+- **Alpha channel**: Rendered as `fill-opacity`/`stroke-opacity` when alpha < 255
 
 ### Enhanced Pipeline Algorithms (merged from vec project)
 - **K-means++ initialization**: Probabilistic centroid selection proportional to distance²
@@ -143,12 +159,20 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Consecutive point dedup**: Removes near-duplicate points from snapping that break angle detection
 - **Thin stripe fast path**: Contours < 2px height/width → direct SVG rect via `svg_override`
 - **Adaptive smoothing passes**: 4 passes for complex graphics (17-1000 colors), 2 for photos
+- **Alpha channel support**: `fill-opacity`/`stroke-opacity` emitted for partially transparent colors
+- **Evenodd fill-rule**: `fill-rule="evenodd"` applied when hole subpaths are present
+- **Progress logging**: Stage-by-stage `eprintln!` output during vectorization for large images
 
 ### New Features (merged from vec project)
 - **Batch directory processing**: `img2svg -i dir/ -o out/` converts all supported images
 - **Auto-resize**: Lanczos3 downscale for images exceeding `--max-size` (default 4096)
 - **Original recoloring**: Each quantized region recolored with average original pixel color
 - **LUT bilateral filter**: Precomputed range-weight LUT with fixed-point arithmetic (radius=2)
+- **Hierarchical decomposition**: `--hierarchical` preserves hole contours with `fill-rule="evenodd"`
+- **Weighted median filter**: Gaussian-like weighting (center=4, edge=2, corner=1)
+- **High-boost filter**: Aggressive sharpening via `original + boost*(original - blurred)`
+- **Adaptive tone mapping**: Per-pixel local gamma based on neighborhood mean luminance
+- **Rand 0.10 compatibility**: `rng()` / `random_range()` / `random()` API (was `thread_rng()` / `gen_range()` / `gen()`)
 
 ### Preprocessing Algorithms
 - **LUT Bilateral filter**: Fast edge-preserving smoothing
@@ -199,11 +223,12 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 - `anyhow` — Error handling
 - `thiserror` — Error derive macros
 - `rayon` (1.10) — Parallel path processing (enhanced pipeline)
-- `rand` (0.8) — K-means++ random centroid selection (enhanced pipeline)
+- `rand` (0.10) — K-means++ random centroid selection (enhanced pipeline)
 
 ### Test Dependencies
 - (dev-dependencies only)
 - Test images in `examples/input/`
+- 328 tests total: 169 lib + 137 bin + 6 MCP + 14 integration + 2 doctests
 
 ## Performance Characteristics
 

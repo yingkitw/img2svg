@@ -262,6 +262,74 @@ mod tests {
         assert_eq!(result, "M10.5 20.5L30.5 41"); // Note the rounding
     }
 
+    #[test]
+    fn test_generate_svg_with_alpha() {
+        let data = VectorizedData {
+            width: 50,
+            height: 50,
+            background_color: (255, 255, 255, 128),
+            curves: vec![
+                Curve {
+                    points: vec![
+                        Point { x: 10.0, y: 10.0 },
+                        Point { x: 40.0, y: 10.0 },
+                        Point { x: 40.0, y: 40.0 },
+                        Point { x: 10.0, y: 40.0 },
+                    ],
+                    color: (255, 0, 0, 64),
+                    is_closed: true,
+                    subpaths: vec![],
+                },
+            ],
+        };
+        let output_path = PathBuf::from("/tmp/test_alpha.svg");
+        let result = generate_svg(&data, &output_path);
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&output_path).unwrap();
+        assert!(content.contains("fill-opacity=\"0.5\""));
+
+        let _ = fs::remove_file(&output_path);
+    }
+
+    #[test]
+    fn test_generate_svg_hierarchical_evenodd() {
+        let data = VectorizedData {
+            width: 100,
+            height: 100,
+            background_color: (255, 255, 255, 255),
+            curves: vec![
+                Curve {
+                    points: vec![],
+                    color: (255, 0, 0, 255),
+                    is_closed: true,
+                    subpaths: vec![
+                        vec![
+                            Point { x: 10.0, y: 10.0 },
+                            Point { x: 90.0, y: 10.0 },
+                            Point { x: 90.0, y: 90.0 },
+                            Point { x: 10.0, y: 90.0 },
+                        ],
+                        vec![
+                            Point { x: 30.0, y: 30.0 },
+                            Point { x: 30.0, y: 70.0 },
+                            Point { x: 70.0, y: 70.0 },
+                            Point { x: 70.0, y: 30.0 },
+                        ],
+                    ],
+                },
+            ],
+        };
+        let output_path = PathBuf::from("/tmp/test_evenodd.svg");
+        let result = generate_svg(&data, &output_path);
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&output_path).unwrap();
+        assert!(content.contains("fill-rule=\"evenodd\""));
+
+        let _ = fs::remove_file(&output_path);
+    }
+
     // === create_multi_path_string Tests ===
 
     #[test]

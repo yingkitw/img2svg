@@ -6,7 +6,7 @@
 
 use crate::edge_detector::EdgeMap;
 use crate::image_processor::ImageData;
-use rand::Rng;
+use rand::RngExt;
 use rgb::RGBA8;
 
 /// Perceptual color distance squared (weighted RGB, approximates human vision).
@@ -22,14 +22,14 @@ pub fn perceptual_dist_sq(a: &RGBA8, b: &RGBA8) -> i32 {
 /// K-means++ initialization: choose centroids with probability proportional
 /// to squared distance from nearest existing centroid.
 fn kmeans_plusplus_init(samples: &[RGBA8], k: usize) -> Vec<RGBA8> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let n = samples.len();
     if n == 0 || k == 0 {
         return Vec::new();
     }
 
     let mut centroids = Vec::with_capacity(k);
-    centroids.push(samples[rng.gen_range(0..n)]);
+    centroids.push(samples[rng.random_range(0..n)]);
 
     let mut distances = vec![0.0f64; n];
 
@@ -49,7 +49,7 @@ fn kmeans_plusplus_init(samples: &[RGBA8], k: usize) -> Vec<RGBA8> {
             break;
         }
 
-        let mut rand_val = rng.r#gen::<f64>() * total_dist;
+        let mut rand_val = rng.random::<f64>() * total_dist;
         let mut chosen = false;
         for (i, &dist) in distances.iter().enumerate() {
             rand_val -= dist;
@@ -60,7 +60,7 @@ fn kmeans_plusplus_init(samples: &[RGBA8], k: usize) -> Vec<RGBA8> {
             }
         }
         if !chosen {
-            centroids.push(samples[rng.gen_range(0..n)]);
+            centroids.push(samples[rng.random_range(0..n)]);
         }
     }
 

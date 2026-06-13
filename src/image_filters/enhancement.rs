@@ -71,7 +71,7 @@ impl UnsharpMask {
         }
     }
 
-    fn gaussian_blur(&self, image_data: &ImageData) -> ImageData {
+    pub(crate) fn gaussian_blur(&self, image_data: &ImageData) -> ImageData {
         let w = image_data.width as usize;
         let h = image_data.height as usize;
         let kernel_size = (self.sigma * 3.0).ceil() as usize * 2 + 1;
@@ -210,6 +210,61 @@ impl LaplacianSharpen {
     }
 }
 
+/// High-boost filtering: aggressive sharpening by boosting high-frequency detail.
+/// Similar to unsharp masking but with a boost factor > 1 for stronger edge emphasis.
+pub struct HighBoostFilter {
+    pub sigma: f32,
+    pub boost: f32,
+}
+
+impl Default for HighBoostFilter {
+    fn default() -> Self {
+        Self {
+            sigma: 1.0,
+            boost: 2.0,
+        }
+    }
+}
+
+impl HighBoostFilter {
+    pub fn new(sigma: f32, boost: f32) -> Self {
+        Self {
+            sigma,
+            boost: boost.max(1.0),
+        }
+    }
+
+    pub fn apply(&self, image_data: &ImageData) -> ImageData {
+        let blurred = UnsharpMask::new(self.sigma, 1.0, 0).gaussian_blur(image_data);
+        let w = image_data.width as usize;
+        let h = image_data.height as usize;
+
+        let mut output = Vec::with_capacity(w * h);
+
+        for (i, pixel) in image_data.pixels.iter().enumerate() {
+            let blurred_pixel = &blurred.pixels[i];
+            output.push(RGBA8::new(
+                (pixel.r as f32 + self.boost * (pixel.r as f32 - blurred_pixel.r as f32))
+                    .round()
+                    .clamp(0.0, 255.0) as u8,
+                (pixel.g as f32 + self.boost * (pixel.g as f32 - blurred_pixel.g as f32))
+                    .round()
+                    .clamp(0.0, 255.0) as u8,
+                (pixel.b as f32 + self.boost * (pixel.b as f32 - blurred_pixel.b as f32))
+                    .round()
+                    .clamp(0.0, 255.0) as u8,
+                pixel.a,
+            ));
+        }
+
+        ImageData {
+            width: image_data.width,
+            height: image_data.height,
+            pixels: output,
+        }
+    }
+}
+
 pub struct GammaCorrection {
     pub gamma: f32,
 }
@@ -295,6 +350,19 @@ mod tests {
         };
         let gamma = GammaCorrection::new(2.2);
         let result = gamma.apply(&img);
+        assert_eq!(result.pixels.len(), 100);
+    }
+
+    #[test]
+    fn test_high_boost_filter() {
+        let pixels = vec![RGBA8::new(128, 128, 128, 255); 100];
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
+        let filter = HighBoostFilter::default();
+        let result = filter.apply(&img);
         assert_eq!(result.pixels.len(), 100);
     }
 

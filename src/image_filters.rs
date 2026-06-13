@@ -10,9 +10,9 @@ use rgb::RGBA8;
 
 pub use self::canny::CannyEdgeDetector;
 pub use self::color_ops::{ColorOps, ColorTemperature, Saturation, HSL, LAB};
-pub use self::contrast::{HistogramEqualizer, CLAHE};
+pub use self::contrast::{AdaptiveToneMapper, HistogramEqualizer, CLAHE};
 pub use self::effects::{EdgeGlowFilter, EmbossFilter, SepiaFilter, VignetteFilter, VintageFilter};
-pub use self::enhancement::{GammaCorrection, LaplacianSharpen, UnsharpMask};
+pub use self::enhancement::{GammaCorrection, HighBoostFilter, LaplacianSharpen, UnsharpMask};
 pub use self::morphology::{MorphologyKind, MorphologyOp};
 pub use self::thresholding::{AdaptiveThreshold, OtsuThreshold};
 
@@ -49,6 +49,54 @@ pub fn median_filter(image_data: &ImageData, radius: u32) -> ImageData {
 
             neighbors.sort_by_key(|p| ((p.r as u32) << 16) | ((p.g as u32) << 8) | (p.b as u32));
             output[y * w + x] = neighbors[neighbors.len() / 2];
+        }
+    }
+
+    ImageData {
+        width: image_data.width,
+        height: image_data.height,
+        pixels: output,
+    }
+}
+
+/// Apply weighted median filter (center pixel has higher weight).
+/// Weights follow a 3×3 Gaussian-like pattern: center=4, edge=2, corner=1.
+pub fn weighted_median_filter(image_data: &ImageData, radius: u32) -> ImageData {
+    let w = image_data.width as usize;
+    let h = image_data.height as usize;
+    let r = radius as usize;
+
+    let mut output = image_data.pixels.clone();
+
+    for y in 0..h {
+        for x in 0..w {
+            let mut weighted = Vec::new();
+
+            let y_start = y.saturating_sub(r);
+            let y_end = (y + r + 1).min(h);
+            let x_start = x.saturating_sub(r);
+            let x_end = (x + r + 1).min(w);
+
+            for ny in y_start..y_end {
+                for nx in x_start..x_end {
+                    let dx = (nx as isize - x as isize).abs();
+                    let dy = (ny as isize - y as isize).abs();
+                    let weight = if dx == 0 && dy == 0 {
+                        4
+                    } else if dx <= 1 && dy <= 1 {
+                        2
+                    } else {
+                        1
+                    };
+                    let p = image_data.pixels[ny * w + nx];
+                    for _ in 0..weight {
+                        weighted.push(p);
+                    }
+                }
+            }
+
+            weighted.sort_by_key(|p| ((p.r as u32) << 16) | ((p.g as u32) << 8) | (p.b as u32));
+            output[y * w + x] = weighted[weighted.len() / 2];
         }
     }
 
@@ -178,6 +226,21 @@ mod tests {
         };
         let edges = prewitt_edge_detection(&img);
         assert!(edges.data[5 * 10 + 5] > 0);
+    }
+
+    #[test]
+    fn test_weighted_median_filter() {
+        let pixels = vec![RGBA8::new(128, 128, 128, 255); 25];
+        let img = ImageData {
+            width: 5,
+            height: 5,
+            pixels,
+        };
+        let result = weighted_median_filter(&img, 1);
+        assert_eq!(result.pixels.len(), 25);
+        for p in result.pixels {
+            assert_eq!(p.r, 128);
+        }
     }
 
     #[test]

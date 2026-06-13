@@ -26,32 +26,52 @@
 //!     .expect("Conversion failed");
 //! ```
 
+/// Cubic Bézier curve fitting with Newton-Raphson reparameterization.
 pub mod bezier_fitter;
+/// Sobel edge detection for gradient-based edge maps.
 pub mod edge_detector;
+/// K-means++ initialization and edge-aware color quantization.
 pub mod enhanced_quantizer;
+/// Enhanced vectorization pipeline: marching squares → Bézier curves.
 pub mod enhanced_vectorizer;
+/// Comprehensive image processing filters (noise reduction, edge enhancement,
+/// contrast adjustment, thresholding, morphology, color operations, effects).
 pub mod image_filters;
+/// Image loading, auto-resize, and median-cut color quantization.
 pub mod image_processor;
+/// Visvalingam-Whyatt simplification with corner preservation.
 pub mod path_simplifier;
+/// LUT bilateral filter and color reduction for photo preprocessing.
 pub mod preprocessor;
+/// Background color detection via border-pixel frequency.
 pub mod region_extractor;
+/// SVG generation with compact output and alpha channel support.
 pub mod svg_generator;
+/// Original pipeline: marching squares, Gaussian smoothing, RDP simplification.
 pub mod vectorizer;
 
+/// Re-export anyhow Result for convenience.
 pub use anyhow::Result;
+/// Re-export enhanced vectorization pipeline types and functions.
 pub use enhanced_vectorizer::{
     generate_enhanced_svg, vectorize_enhanced, write_enhanced_svg, EnhancedOptions, EnhancedPath,
     EnhancedVectorData,
 };
+/// Re-export image filter functions and types.
 pub use image_filters::{
-    median_filter, prewitt_edge_detection, roberts_edge_detection, AdaptiveThreshold,
-    CannyEdgeDetector, ColorOps, ColorTemperature, EmbossFilter, GammaCorrection,
-    HistogramEqualizer, LaplacianSharpen, MorphologyKind, MorphologyOp, OtsuThreshold, Saturation,
-    SepiaFilter, UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
+    median_filter, prewitt_edge_detection, roberts_edge_detection, weighted_median_filter,
+    AdaptiveThreshold, AdaptiveToneMapper, CannyEdgeDetector, ColorOps, ColorTemperature,
+    EmbossFilter, GammaCorrection, HighBoostFilter, HistogramEqualizer, LaplacianSharpen,
+    MorphologyKind, MorphologyOp, OtsuThreshold, Saturation, SepiaFilter, UnsharpMask,
+    VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
 };
+/// Re-export image loading and quantization functions.
 pub use image_processor::{load_image, quantize_colors, ImageData};
+/// Re-export photo preprocessing functions.
 pub use preprocessor::{preprocess, PreprocessOptions};
+/// Re-export SVG generation functions.
 pub use svg_generator::{generate_svg, generate_svg_advanced};
+/// Re-export original vectorization pipeline types and functions.
 pub use vectorizer::{vectorize, Curve, Point, VectorizedData};
 
 /// Options for image to SVG conversion
@@ -156,8 +176,7 @@ pub fn convert_to_svg_string(
     let mut buffer = Vec::new();
 
     // Write SVG header
-    let bg = vectorized_data.background_color;
-    let bg_str = format!("#{:02x}{:02x}{:02x}", bg.0, bg.1, bg.2);
+    let (bg_str, bg_opacity) = svg_generator::color_with_alpha(vectorized_data.background_color);
 
     writeln!(
         &mut buffer,
@@ -169,16 +188,13 @@ pub fn convert_to_svg_string(
     )?;
     writeln!(
         &mut buffer,
-        r#"  <rect width="{}" height="{}" fill="{}"/>"#,
-        vectorized_data.width, vectorized_data.height, bg_str
+        r#"  <rect width="{}" height="{}" fill="{}"{}/>"#,
+        vectorized_data.width, vectorized_data.height, bg_str, bg_opacity
     )?;
 
     // Write curves
     for curve in &vectorized_data.curves {
-        let color_str = format!(
-            "#{:02x}{:02x}{:02x}",
-            curve.color.0, curve.color.1, curve.color.2
-        );
+        let (color_str, opacity_attr) = svg_generator::color_with_alpha(curve.color);
 
         let path_str = if !curve.subpaths.is_empty() {
             svg_generator::create_multi_path_string(&curve.subpaths)
@@ -194,8 +210,8 @@ pub fn convert_to_svg_string(
 
         writeln!(
             &mut buffer,
-            r#"  <path d="{}" fill="{}" stroke="none"/>"#,
-            path_str, color_str
+            r#"  <path d="{}" fill="{}"{} stroke="none"/>"#,
+            path_str, color_str, opacity_attr
         )?;
     }
 

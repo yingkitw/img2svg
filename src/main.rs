@@ -23,6 +23,7 @@ fn process_file(
     output_path: &Path,
     cli: &Cli,
 ) -> Result<()> {
+    eprintln!("  Loading image...");
     let mut image_data = image_processor::load_image(input_path)?;
 
     // Auto-resize large images to prevent OOM
@@ -55,6 +56,7 @@ fn process_file(
             cli.hierarchical,
         )?;
 
+        eprintln!("  Generating SVG...");
         if cli.advanced {
             svg_generator::generate_svg_advanced(&vectorized_data, output_path)?;
         } else {
@@ -66,7 +68,9 @@ fn process_file(
             preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
             ..Default::default()
         };
+        eprintln!("  Vectorizing with enhanced pipeline...");
         let vector_data = vectorize_enhanced(&image_data, &options)?;
+        eprintln!("  Generating SVG...");
         write_enhanced_svg(&vector_data, output_path)?;
         eprintln!(
             "  {} paths, background #{:02x}{:02x}{:02x}",
