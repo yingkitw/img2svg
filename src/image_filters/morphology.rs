@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_gradient() {
         let mut pixels = Vec::new();
-        for y in 0..5 {
+        for _y in 0..5 {
             for x in 0..5 {
                 if x < 3 {
                     pixels.push(RGBA8::new(255, 255, 255, 255));

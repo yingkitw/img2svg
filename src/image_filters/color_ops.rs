@@ -17,7 +17,7 @@ impl ColorTemperature {
             .pixels
             .iter()
             .map(|pixel| {
-                let (mut r, mut g, mut b) = (pixel.r as i32, pixel.g as i32, pixel.b as i32);
+                let (mut r, g, mut b) = (pixel.r as i32, pixel.g as i32, pixel.b as i32);
 
                 if self.adjustment > 0 {
                     r = (r as f32 * (1.0 + self.adjustment as f32 * 0.002)).round() as i32;
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn test_lab_conversion() {
         let (l, a, b) = LAB::rgb_to_lab(255, 0, 0);
-        let (r, g, b_out) = LAB::lab_to_rgb(l, a, b);
+        let (r, _g, _b_out) = LAB::lab_to_rgb(l, a, b);
         assert!(r > 200);
     }
 

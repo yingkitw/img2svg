@@ -373,9 +373,9 @@ mod tests {
         let mask = create_test_mask(10, 10, "full");
         let contours = marching_squares_contours(&mask, 10, 10);
         // Should have one contour around the border
-        assert!(contours.len() >= 1);
+        assert!(!contours.is_empty());
         // Check that contour is closed and roughly rectangular
-        if contours.len() > 0 {
+        if !contours.is_empty() {
             assert!(contours[0].len() >= 4);
         }
     }
@@ -385,7 +385,7 @@ mod tests {
         let mask = create_test_mask(20, 20, "square");
         let contours = marching_squares_contours(&mask, 20, 20);
         // Should find at least one contour
-        assert!(contours.len() >= 1);
+        assert!(!contours.is_empty());
         // Each contour should have enough points
         for contour in &contours {
             assert!(contour.len() >= 4);

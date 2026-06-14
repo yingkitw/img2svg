@@ -2,7 +2,6 @@
 
 use crate::image_filters::EdgeMap;
 use crate::image_processor::ImageData;
-use rgb::RGBA8;
 
 pub struct CannyEdgeDetector {
     pub low_threshold: f32,
@@ -256,6 +255,7 @@ impl CannyEdgeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rgb::RGBA8;
 
     #[test]
     fn test_canny_detects_edge() {

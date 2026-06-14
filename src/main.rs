@@ -15,7 +15,7 @@ use clap::Parser;
 use cli::{Cli, is_supported_image};
 use preprocessor::{preprocess, PreprocessOptions};
 use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn is_gif(path: &Path) -> bool {
     path.extension()

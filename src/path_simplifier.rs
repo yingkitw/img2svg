@@ -145,17 +145,17 @@ pub fn visvalingam_whyatt(points: &[Point], min_area: f64, corner_indices: &[usi
                 let next = find_next_alive(&alive, idx);
 
                 if let (Some(p), Some(nx)) = (prev, next) {
-                    if let Some(pp) = find_prev_alive(&alive, p) {
-                        if !corner_set.contains(&p) {
-                            areas[p] =
-                                triangle_area(&points[pp], &points[p], &points[nx]).max(min_val);
-                        }
+                    if let Some(pp) = find_prev_alive(&alive, p)
+                        && !corner_set.contains(&p)
+                    {
+                        areas[p] =
+                            triangle_area(&points[pp], &points[p], &points[nx]).max(min_val);
                     }
-                    if let Some(nn) = find_next_alive(&alive, nx) {
-                        if !corner_set.contains(&nx) {
-                            areas[nx] =
-                                triangle_area(&points[p], &points[nx], &points[nn]).max(min_val);
-                        }
+                    if let Some(nn) = find_next_alive(&alive, nx)
+                        && !corner_set.contains(&nx)
+                    {
+                        areas[nx] =
+                            triangle_area(&points[p], &points[nx], &points[nn]).max(min_val);
                     }
                 }
             }

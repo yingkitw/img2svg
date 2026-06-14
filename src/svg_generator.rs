@@ -33,7 +33,7 @@ pub fn generate_svg_to<W: Write>(vectorized_data: &VectorizedData, writer: &mut 
         } else if !curve.points.is_empty() {
             write_subpath_to(writer, &curve.points, curve.is_closed)?;
         } else {
-            write!(writer, "\" fill=\"{}\"{} stroke=\"none\"/>\n", color_str, opacity_attr)?;
+            writeln!(writer, "\" fill=\"{}\"{} stroke=\"none\"/>", color_str, opacity_attr)?;
             continue;
         };
 

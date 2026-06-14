@@ -336,7 +336,7 @@ mod tests {
         };
         let (quantized, _, palette) = quantize_enhanced(&img, 4);
         // Should produce 1 color since input is uniform
-        assert!(palette.len() >= 1);
+        assert!(!palette.is_empty());
         // All output pixels should be the same
         let first = quantized.pixels[0];
         for p in &quantized.pixels {

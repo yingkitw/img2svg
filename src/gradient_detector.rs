@@ -111,7 +111,7 @@ pub fn detect_linear_gradient(image_data: &ImageData, mask: &[bool]) -> Option<L
     for i in 0..xs.len() {
         let dx = xs[i] - cx;
         let dy = ys[i] - cy;
-        let lum = luminance(&colors[i]) as f64;
+        let lum = luminance(&colors[i]);
         cov_xx += dx * dx * lum;
         cov_yy += dy * dy * lum;
         cov_xy += dx * dy * lum;
@@ -122,7 +122,7 @@ pub fn detect_linear_gradient(image_data: &ImageData, mask: &[bool]) -> Option<L
     let det = cov_xx * cov_yy - cov_xy * cov_xy;
     let discriminant = (trace * trace - 4.0 * det).max(0.0);
     let lambda1 = (trace + discriminant.sqrt()) / 2.0;
-    let lambda2 = (trace - discriminant.sqrt()) / 2.0;
+    let _lambda2 = (trace - discriminant.sqrt()) / 2.0;
 
     // Direction vector of principal component
     let (dx, dy) = if cov_xy.abs() < 1e-6 {
@@ -314,7 +314,7 @@ mod tests {
 
     fn create_horizontal_gradient_image(width: u32, height: u32) -> ImageData {
         let mut pixels = Vec::new();
-        for y in 0..height {
+        for _y in 0..height {
             for x in 0..width {
                 let t = x as f64 / (width as f64 - 1.0);
                 let r = (t * 255.0) as u8;

@@ -44,7 +44,7 @@ impl UnsharpMask {
                 + 0.114 * blurred_pixel.b as f64)
                 .round()) as u8;
 
-            let diff = (gray as i16 - blurred_gray as i16).abs() as u8;
+            let diff = (gray as i16 - blurred_gray as i16).abs().clamp(0, 255) as u8;
 
             if diff > self.threshold {
                 output.push(RGBA8::new(

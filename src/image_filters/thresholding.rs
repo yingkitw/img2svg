@@ -265,7 +265,8 @@ mod tests {
             pixels,
         };
         let threshold = OtsuThreshold::compute(&img);
-        assert!(threshold <= 255);
+        // threshold is u8, so it's always <= 255; this tests it doesn't panic
+        let _ = threshold;
     }
 
     #[test]
@@ -288,8 +289,8 @@ mod tests {
     fn test_adaptive_threshold() {
         let mut pixels = Vec::new();
         for y in 0..10 {
-            for x in 0..10 {
-                let val = ((y * 25) as u8).min(255);
+            for _x in 0..10 {
+                let val = (y * 25) as u8;
                 pixels.push(RGBA8::new(val, val, val, 255));
             }
         }
@@ -313,7 +314,7 @@ mod tests {
     fn test_smart_threshold_bimodal_chooses_otsu() {
         // Bimodal image: two clear peaks around 50 and 200 → should use Otsu
         let mut pixels = Vec::new();
-        for y in 0..10 {
+        for _y in 0..10 {
             for x in 0..10 {
                 let val = if x < 5 { 50u8 } else { 200u8 };
                 pixels.push(RGBA8::new(val, val, val, 255));
@@ -335,8 +336,8 @@ mod tests {
         // Smooth gradient: no clear bimodal separation → should use adaptive
         let mut pixels = Vec::new();
         for y in 0..10 {
-            for x in 0..10 {
-                let val = ((y * 25) as u8).min(255);
+            for _x in 0..10 {
+                let val = (y * 25) as u8;
                 pixels.push(RGBA8::new(val, val, val, 255));
             }
         }

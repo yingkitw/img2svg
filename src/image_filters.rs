@@ -5,8 +5,6 @@
 //! morphological operations, and color transformations.
 
 use crate::image_processor::ImageData;
-use anyhow::Result;
-use rgb::RGBA8;
 
 pub use self::canny::CannyEdgeDetector;
 pub use self::color_ops::{ColorOps, ColorTemperature, Saturation, HSL, LAB};
@@ -191,6 +189,7 @@ pub struct EdgeMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rgb::RGBA8;
 
     #[test]
     fn test_median_filter_uniform() {

@@ -5,8 +5,8 @@
 //! to SVG format.
 
 use img2svg::{
-    generate_svg, generate_svg_advanced, load_image, vectorize, vectorize_enhanced, write_enhanced_svg,
-    ConversionOptions, EnhancedOptions,
+    generate_svg, load_image, vectorize, vectorize_enhanced, write_enhanced_svg,
+    EnhancedOptions,
 };
 use img2svg::image_processor::resize_if_needed;
 use serde_json::{json, Value};

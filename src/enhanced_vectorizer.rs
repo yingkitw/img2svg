@@ -17,7 +17,6 @@ use crate::region_extractor::detect_background_color;
 use crate::vectorizer::{marching_squares_contours, Point};
 use anyhow::Result;
 use rayon::prelude::*;
-use rgb::RGBA8;
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -576,8 +575,8 @@ pub fn write_enhanced_svg(data: &EnhancedVectorData, output_path: &std::path::Pa
     Ok(())
 }
 
-/// Group consecutive same-color paths (kept for backward compatibility).
-/// The streaming `generate_enhanced_svg_to` no longer uses this.
+/// Group consecutive same-color paths (kept for tests).
+#[allow(dead_code)]
 fn group_by_color(paths: &[EnhancedPath]) -> Vec<(String, Vec<EnhancedPath>)> {
     let mut groups: Vec<(String, Vec<EnhancedPath>)> = Vec::new();
 
@@ -591,11 +590,11 @@ fn group_by_color(paths: &[EnhancedPath]) -> Vec<(String, Vec<EnhancedPath>)> {
             path.color.0, path.color.1, path.color.2
         );
 
-        if let Some((last_hex, last_paths)) = groups.last_mut() {
-            if *last_hex == color_hex {
-                last_paths.push(path.clone());
-                continue;
-            }
+        if let Some((last_hex, last_paths)) = groups.last_mut()
+            && *last_hex == color_hex
+        {
+            last_paths.push(path.clone());
+            continue;
         }
 
         groups.push((color_hex, vec![path.clone()]));

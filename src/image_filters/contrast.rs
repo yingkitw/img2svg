@@ -77,8 +77,8 @@ impl CLAHE {
     pub fn equalize(&self, image_data: &ImageData) -> ImageData {
         let w = image_data.width as usize;
         let h = image_data.height as usize;
-        let tile_w = (w + self.grid_size - 1) / self.grid_size;
-        let tile_h = (h + self.grid_size - 1) / self.grid_size;
+        let tile_w = w.div_ceil(self.grid_size);
+        let tile_h = h.div_ceil(self.grid_size);
 
         let gray: Vec<u8> = image_data
             .pixels
