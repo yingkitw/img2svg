@@ -1,11 +1,100 @@
 pub use anyhow::Result;
 use rgb::RGBA8;
 
+/// Source color space of the loaded image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSpace {
+    /// Standard sRGB or generic RGB.
+    Rgb,
+    /// CMYK (subtractive) color space, common in print workflows.
+    Cmyk,
+    /// Grayscale.
+    Grayscale,
+}
+
 #[derive(Debug, Clone)]
 pub struct ImageData {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<RGBA8>,
+}
+
+/// Convert CMYK (0-255) to RGB (0-255) using the standard formula:
+///
+/// R = 255 * (1 - C/255) * (1 - K/255)
+/// G = 255 * (1 - M/255) * (1 - K/255)
+/// B = 255 * (1 - Y/255) * (1 - K/255)
+pub fn cmyk_to_rgb(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
+    let c = c as f64 / 255.0;
+    let m = m as f64 / 255.0;
+    let y = y as f64 / 255.0;
+    let k = k as f64 / 255.0;
+
+    let r = 255.0 * (1.0 - c) * (1.0 - k);
+    let g = 255.0 * (1.0 - m) * (1.0 - k);
+    let b = 255.0 * (1.0 - y) * (1.0 - k);
+
+    (
+        r.round().clamp(0.0, 255.0) as u8,
+        g.round().clamp(0.0, 255.0) as u8,
+        b.round().clamp(0.0, 255.0) as u8,
+    )
+}
+
+/// Create `ImageData` from raw CMYK pixels (each pixel = 4 bytes: C, M, Y, K).
+/// Applies standard CMYK -> RGB conversion.
+pub fn image_data_from_cmyk(cmyk_pixels: &[(u8, u8, u8, u8)], width: u32, height: u32) -> ImageData {
+    let pixels: Vec<RGBA8> = cmyk_pixels
+        .iter()
+        .map(|&(c, m, y, k)| {
+            let (r, g, b) = cmyk_to_rgb(c, m, y, k);
+            RGBA8::new(r, g, b, 255)
+        })
+        .collect();
+    ImageData {
+        width,
+        height,
+        pixels,
+    }
+}
+
+/// Try to detect the source color space of an image file by inspecting its bytes.
+/// For JPEG, checks the APP14 Adobe marker for CMYK (transform == 2).
+/// Falls back to `Rgb` for other formats.
+pub fn detect_color_space(path: &std::path::Path) -> ColorSpace {
+    use std::fs::read;
+
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !ext.eq_ignore_ascii_case("jpg") && !ext.eq_ignore_ascii_case("jpeg") {
+        return ColorSpace::Rgb;
+    }
+
+    let bytes = match read(path) {
+        Ok(b) => b,
+        Err(_) => return ColorSpace::Rgb,
+    };
+
+    // Scan for APP14 'Adobe' marker (0xFFEE followed by length and 'Adobe\0')
+    let mut i = 0;
+    while i + 16 < bytes.len() {
+        if bytes[i] == 0xFF && bytes[i + 1] == 0xEE {
+            // APP14 marker found
+            let seg_len = u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
+            if i + seg_len + 2 <= bytes.len()
+                && &bytes[i + 4..i + 10] == b"Adobe\0"
+            {
+                // Transform byte at offset 11 within the APP14 segment
+                let transform = bytes.get(i + 4 + 11).copied().unwrap_or(0);
+                // transform == 0: YCbCr, 1: YCCK (CMYK), 2: unknown
+                if transform == 1 || transform == 2 {
+                    return ColorSpace::Cmyk;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    ColorSpace::Rgb
 }
 
 pub fn load_image(path: &std::path::Path) -> Result<ImageData> {
@@ -22,6 +111,58 @@ pub fn load_image(path: &std::path::Path) -> Result<ImageData> {
         height: rgba.height(),
         pixels,
     })
+}
+
+/// A single frame from an animated GIF with its delay in milliseconds.
+#[derive(Debug, Clone)]
+pub struct GifFrame {
+    pub image_data: ImageData,
+    /// Frame delay in milliseconds.
+    pub delay_ms: u32,
+}
+
+/// Load all frames from an animated GIF file.
+/// Returns each frame as `ImageData` along with its display delay in milliseconds.
+/// For static GIFs, returns a single frame with delay=0.
+pub fn load_animated_gif(path: &std::path::Path) -> Result<Vec<GifFrame>> {
+    use image::codecs::gif::GifDecoder;
+    use image::AnimationDecoder;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let file = File::open(path)?;
+    let decoder = GifDecoder::new(BufReader::new(file))?;
+    let frames = decoder.into_frames().collect_frames()?;
+
+    let mut result = Vec::with_capacity(frames.len());
+    for frame in frames {
+        let delay = frame.delay();
+        let buf = frame.into_buffer();
+        // image::Delay stores delay as (numerator, denominator) in milliseconds.
+        let (numer, denom) = delay.numer_denom_ms();
+        let delay_ms = if denom == 0 {
+            100
+        } else {
+            let ms = (numer as f64 / denom as f64).round() as u32;
+            ms.max(10) // GIF minimum practical delay
+        };
+
+        let pixels: Vec<RGBA8> = buf
+            .pixels()
+            .map(|p| RGBA8::new(p[0], p[1], p[2], p[3]))
+            .collect();
+
+        result.push(GifFrame {
+            image_data: ImageData {
+                width: buf.width(),
+                height: buf.height(),
+                pixels,
+            },
+            delay_ms,
+        });
+    }
+
+    Ok(result)
 }
 
 /// Resize image if either dimension exceeds max_size, maintaining aspect ratio.

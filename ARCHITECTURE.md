@@ -181,6 +181,9 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **SmartThreshold**: Auto-selects Otsu vs adaptive thresholding based on histogram separability measure
 - **Zero-length segment removal**: Skips duplicate formatted coordinates in SVG path strings
 - **Gradient detection**: `detect_gradient` identifies linear and radial gradients via PCA + linear regression per channel for native SVG gradient rendering
+- **Animated GIF support**: `load_animated_gif` loads all frames with delays; CLI outputs numbered SVG files (`output_001.svg`, etc.)
+- **CMYK color space support**: `cmyk_to_rgb` converts CMYK to RGB; `detect_color_space` inspects JPEG APP14 markers to detect CMYK source images
+- **Fully streaming enhanced pipeline**: `generate_enhanced_svg_to` streams paths directly with zero-allocation path writing (`bezier_to_svg_path_to`), no intermediate `ColorGroup` collection or `path_data` strings
 
 ### Preprocessing Algorithms
 - **LUT Bilateral filter**: Fast edge-preserving smoothing
@@ -226,6 +229,8 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 - `input_path`, `output_path` (required)
 - `num_colors`, `smooth_level`, `threshold` (optional, legacy pipeline)
 - `preprocess` (optional): When `true`, uses the enhanced Bézier pipeline with preprocessing
+- `max_size` (optional): Auto-resize images exceeding this dimension (default 4096) to prevent OOM
+- `progress_token` (optional): Receives real-time `notifications/progress` during conversion
 - **Response details**: Includes `pipeline`, `output_size_bytes`, `width`, `height`, `colors_used`
 
 ## Dependencies
@@ -242,7 +247,7 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 ### Test Dependencies
 - (dev-dependencies only)
 - Test images in `examples/input/`
-- 349 tests total: 181 lib + 142 bin + 7 MCP + 17 integration + 2 doctests
+- 377 tests total: 193 lib + 154 bin + 10 MCP + 18 integration + 2 doctests
 
 ## Performance Characteristics
 

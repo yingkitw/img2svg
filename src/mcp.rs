@@ -5,11 +5,33 @@
 //! to SVG format.
 
 use img2svg::{
-    convert, load_image, vectorize_enhanced, write_enhanced_svg, ConversionOptions, EnhancedOptions,
+    generate_svg, generate_svg_advanced, load_image, vectorize, vectorize_enhanced, write_enhanced_svg,
+    ConversionOptions, EnhancedOptions,
 };
+use img2svg::image_processor::resize_if_needed;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+
+/// Send a JSON-RPC notification for progress updates.
+fn send_progress_notification<W: Write>(
+    writer: &mut W,
+    progress_token: &str,
+    progress: f64,
+    total: f64,
+) -> io::Result<()> {
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/progress",
+        "params": {
+            "progressToken": progress_token,
+            "progress": progress,
+            "total": total
+        }
+    });
+    writeln!(writer, "{}", msg)?;
+    writer.flush()
+}
 
 /// MCP Request structure
 #[derive(Debug, serde::Deserialize)]
@@ -128,6 +150,17 @@ impl Img2SvgMcpServer {
                                     "type": "boolean",
                                     "description": "Apply edge-preserving smoothing and color reduction before vectorization. Uses the enhanced Bézier pipeline when enabled.",
                                     "default": false
+                                },
+                                "max_size": {
+                                    "type": "integer",
+                                    "description": "Maximum image dimension in pixels. Images larger than this will be auto-resized (Lanczos3) to prevent OOM. Default: 4096.",
+                                    "minimum": 64,
+                                    "maximum": 16384,
+                                    "default": 4096
+                                },
+                                "progress_token": {
+                                    "type": "string",
+                                    "description": "Token for receiving real-time progress notifications during conversion."
                                 }
                             },
                             "required": ["input_path", "output_path"]
@@ -162,13 +195,29 @@ impl Img2SvgMcpServer {
                 let smooth_level = args.get("smooth_level").and_then(|v| v.as_i64()).unwrap_or(5) as u8;
                 let threshold = args.get("threshold").and_then(|v| v.as_f64()).unwrap_or(0.1);
                 let preprocess = args.get("preprocess").and_then(|v| v.as_bool()).unwrap_or(false);
+                let max_size = args.get("max_size").and_then(|v| v.as_i64()).unwrap_or(4096) as u32;
+                let progress_token = args.get("progress_token").and_then(|v| v.as_str());
 
                 match (input_path, output_path) {
                     (Some(input), Some(output)) => {
+                        let mut notify = |stage: f64, total: f64| {
+                            if let Some(token) = progress_token {
+                                let _ = send_progress_notification(
+                                    &mut io::stdout(),
+                                    token,
+                                    stage,
+                                    total,
+                                );
+                            }
+                        };
+
                         let result = if preprocess {
-                            // Enhanced pipeline with optional preprocessing
+                            notify(0.0, 100.0);
                             match load_image(Path::new(input)) {
                                 Ok(image_data) => {
+                                    notify(20.0, 100.0);
+                                    let image_data = resize_if_needed(image_data, max_size);
+                                    notify(40.0, 100.0);
                                     let opts = EnhancedOptions {
                                         num_colors,
                                         preprocess: true,
@@ -176,6 +225,7 @@ impl Img2SvgMcpServer {
                                     };
                                     match vectorize_enhanced(&image_data, &opts) {
                                         Ok(data) => {
+                                            notify(70.0, 100.0);
                                             let info = ConversionInfo {
                                                 width: data.width,
                                                 height: data.height,
@@ -183,7 +233,10 @@ impl Img2SvgMcpServer {
                                                 pipeline: "enhanced",
                                             };
                                             match write_enhanced_svg(&data, Path::new(output)) {
-                                                Ok(()) => Ok(info),
+                                                Ok(()) => {
+                                                    notify(100.0, 100.0);
+                                                    Ok(info)
+                                                }
                                                 Err(e) => Err(format!("SVG write failed: {}", e)),
                                             }
                                         }
@@ -193,22 +246,32 @@ impl Img2SvgMcpServer {
                                 Err(e) => Err(format!("Image load failed: {}", e)),
                             }
                         } else {
-                            // Legacy pipeline
-                            let options = ConversionOptions {
-                                num_colors,
-                                smooth_level,
-                                threshold,
-                                hierarchical: false,
-                                advanced: false,
-                            };
-                            match convert(Path::new(input), Path::new(output), &options) {
-                                Ok(()) => Ok(ConversionInfo {
-                                    width: 0,
-                                    height: 0,
-                                    colors_used: num_colors,
-                                    pipeline: "legacy",
-                                }),
-                                Err(e) => Err(format!("Conversion failed: {}", e)),
+                            notify(0.0, 100.0);
+                            match load_image(Path::new(input)) {
+                                Ok(image_data) => {
+                                    notify(25.0, 100.0);
+                                    let image_data = resize_if_needed(image_data, max_size);
+                                    notify(50.0, 100.0);
+                                    match vectorize(&image_data, num_colors, threshold, smooth_level, false) {
+                                        Ok(vectorized_data) => {
+                                            notify(75.0, 100.0);
+                                            match generate_svg(&vectorized_data, Path::new(output)) {
+                                                Ok(()) => {
+                                                    notify(100.0, 100.0);
+                                                    Ok(ConversionInfo {
+                                                        width: image_data.width,
+                                                        height: image_data.height,
+                                                        colors_used: vectorized_data.curves.len(),
+                                                        pipeline: "legacy",
+                                                    })
+                                                }
+                                                Err(e) => Err(format!("SVG write failed: {}", e)),
+                                            }
+                                        }
+                                        Err(e) => Err(format!("Vectorization failed: {}", e)),
+                                    }
+                                }
+                                Err(e) => Err(format!("Image load failed: {}", e)),
                             }
                         };
 
@@ -440,6 +503,84 @@ mod tests {
         assert!(res["details"]["width"].is_number());
         assert!(res["details"]["height"].is_number());
         assert!(res["details"]["colors_used"].is_number());
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn send_progress_notification_format() {
+        let mut buf = Vec::new();
+        super::send_progress_notification(&mut buf, "token-123", 50.0, 100.0).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        let msg: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        assert_eq!(msg["jsonrpc"], "2.0");
+        assert_eq!(msg["method"], "notifications/progress");
+        assert_eq!(msg["params"]["progressToken"], "token-123");
+        assert_eq!(msg["params"]["progress"], 50.0);
+        assert_eq!(msg["params"]["total"], 100.0);
+    }
+
+    #[test]
+    fn tools_call_convert_with_progress_token_succeeds() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_progress_test.svg");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                    "progress_token": "test-token-42",
+                }),
+            },
+            json!(102),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_convert_with_max_size_limits_dimensions() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_maxsize_test.svg");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                    "max_size": 32,
+                }),
+            },
+            json!(101),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let res = r.result.unwrap();
+        let width = res["details"]["width"].as_u64().unwrap_or(0);
+        let height = res["details"]["height"].as_u64().unwrap_or(0);
+        assert!(
+            width <= 32 || height <= 32,
+            "Expected dimensions <= 32 after resize, got {}x{}",
+            width,
+            height
+        );
         let _ = std::fs::remove_file(&out);
     }
 

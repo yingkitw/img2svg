@@ -242,4 +242,91 @@ mod tests {
         assert_eq!(result.width, 4096);
         assert_eq!(result.height, 4096);
     }
+
+    #[test]
+    fn test_cmyk_to_rgb_white() {
+        // CMYK(0,0,0,0) → RGB(255,255,255)
+        let (r, g, b) = cmyk_to_rgb(0, 0, 0, 0);
+        assert_eq!(r, 255);
+        assert_eq!(g, 255);
+        assert_eq!(b, 255);
+    }
+
+    #[test]
+    fn test_cmyk_to_rgb_black() {
+        // CMYK(0,0,0,255) → RGB(0,0,0)
+        let (r, g, b) = cmyk_to_rgb(0, 0, 0, 255);
+        assert_eq!(r, 0);
+        assert_eq!(g, 0);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn test_cmyk_to_rgb_cyan() {
+        // CMYK(255,0,0,0) → RGB(0,255,255) (cyan ink = no red)
+        let (r, g, b) = cmyk_to_rgb(255, 0, 0, 0);
+        assert_eq!(r, 0);
+        assert_eq!(g, 255);
+        assert_eq!(b, 255);
+    }
+
+    #[test]
+    fn test_cmyk_to_rgb_magenta() {
+        // CMYK(0,255,0,0) → RGB(255,0,255) (magenta ink = no green)
+        let (r, g, b) = cmyk_to_rgb(0, 255, 0, 0);
+        assert_eq!(r, 255);
+        assert_eq!(g, 0);
+        assert_eq!(b, 255);
+    }
+
+    #[test]
+    fn test_cmyk_to_rgb_yellow() {
+        // CMYK(0,0,255,0) → RGB(255,255,0) (yellow ink = no blue)
+        let (r, g, b) = cmyk_to_rgb(0, 0, 255, 0);
+        assert_eq!(r, 255);
+        assert_eq!(g, 255);
+        assert_eq!(b, 0);
+    }
+
+    #[test]
+    fn test_cmyk_to_rgb_red() {
+        // CMYK(0,255,255,0) → RGB(255,0,0) (no cyan, full magenta + yellow = red)
+        let (r, g, b) = cmyk_to_rgb(0, 255, 255, 0);
+        assert!(r > 250, "Red should be high: {}", r);
+        assert!(g < 5, "Green should be near zero: {}", g);
+        assert!(b < 5, "Blue should be near zero: {}", b);
+    }
+
+    #[test]
+    fn test_cmyk_to_rgb_with_black_component() {
+        // CMYK(0,255,255,128) → darker red
+        let (r, g, b) = cmyk_to_rgb(0, 255, 255, 128);
+        assert!(r > 100 && r < 150, "Red should be mid-range with K component");
+        assert!(g < 5);
+        assert!(b < 5);
+    }
+
+    #[test]
+    fn test_image_data_from_cmyk() {
+        let cmyk = vec![
+            (0, 0, 0, 0),    // white
+            (255, 0, 0, 0),  // cyan (no red)
+            (0, 255, 0, 0),  // magenta (no green)
+            (0, 0, 255, 0),  // yellow (no blue)
+        ];
+        let img = image_data_from_cmyk(&cmyk, 2, 2);
+        assert_eq!(img.width, 2);
+        assert_eq!(img.height, 2);
+        assert_eq!(img.pixels[0], RGBA8::new(255, 255, 255, 255)); // white
+        assert_eq!(img.pixels[1], RGBA8::new(0, 255, 255, 255));   // cyan
+        assert_eq!(img.pixels[2], RGBA8::new(255, 0, 255, 255));  // magenta
+        assert_eq!(img.pixels[3], RGBA8::new(255, 255, 0, 255));  // yellow
+    }
+
+    #[test]
+    fn test_detect_color_space_non_jpeg() {
+        use std::path::Path;
+        assert_eq!(detect_color_space(Path::new("image.png")), ColorSpace::Rgb);
+        assert_eq!(detect_color_space(Path::new("image.gif")), ColorSpace::Rgb);
+    }
 }

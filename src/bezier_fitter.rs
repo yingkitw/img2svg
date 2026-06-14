@@ -4,6 +4,7 @@
 //! Ported from vec project's BezierFitter.
 
 use crate::vectorizer::Point;
+use std::io::{Result as IoResult, Write};
 
 /// A cubic Bézier curve segment.
 #[derive(Debug, Clone)]
@@ -598,6 +599,92 @@ pub fn bezier_to_svg_path(curves: &[BezierCurve], closed: bool) -> String {
     path
 }
 
+/// Write a formatted number directly to a writer (avoids returning a String).
+fn fmt_num_to<W: Write>(writer: &mut W, v: f64) -> IoResult<()> {
+    if (v - v.round()).abs() < 1e-4 {
+        write!(writer, "{}", v.round() as i64)
+    } else {
+        let s = format!("{:.2}", v);
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        write!(writer, "{}", trimmed)
+    }
+}
+
+/// Stream Bézier curves as SVG path data directly to a writer.
+/// Zero-allocation variant of `bezier_to_svg_path` — writes directly without
+/// building an intermediate string.
+pub fn bezier_to_svg_path_to<W: Write>(
+    writer: &mut W,
+    curves: &[BezierCurve],
+    closed: bool,
+) -> IoResult<()> {
+    if curves.is_empty() {
+        return Ok(());
+    }
+
+    write!(writer, "M",)?;
+    fmt_num_to(writer, curves[0].start.x)?;
+    write!(writer, ",",)?;
+    fmt_num_to(writer, curves[0].start.y)?;
+
+    let mut i = 0;
+    while i < curves.len() {
+        let curve = &curves[i];
+        if is_linear_curve(curve) {
+            let start = &curves[i].start;
+            let mut end = &curve.end;
+            let mut j = i + 1;
+            while j < curves.len() {
+                let next = &curves[j];
+                if !is_linear_curve(next) {
+                    break;
+                }
+                let candidate_end = &next.end;
+                let dx = candidate_end.x - start.x;
+                let dy = candidate_end.y - start.y;
+                let line_len = (dx * dx + dy * dy).sqrt();
+                if line_len < 0.5 {
+                    end = candidate_end;
+                    j += 1;
+                    continue;
+                }
+                let dist = ((end.y - start.y) * dx - (end.x - start.x) * dy).abs() / line_len;
+                if dist < 1.5 {
+                    end = candidate_end;
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            write!(writer, "L",)?;
+            fmt_num_to(writer, end.x)?;
+            write!(writer, ",",)?;
+            fmt_num_to(writer, end.y)?;
+            i = j;
+        } else {
+            write!(writer, "C",)?;
+            fmt_num_to(writer, curve.control1.x)?;
+            write!(writer, ",",)?;
+            fmt_num_to(writer, curve.control1.y)?;
+            write!(writer, " ",)?;
+            fmt_num_to(writer, curve.control2.x)?;
+            write!(writer, ",",)?;
+            fmt_num_to(writer, curve.control2.y)?;
+            write!(writer, " ",)?;
+            fmt_num_to(writer, curve.end.x)?;
+            write!(writer, ",",)?;
+            fmt_num_to(writer, curve.end.y)?;
+            i += 1;
+        }
+    }
+
+    if closed {
+        write!(writer, "Z",)?;
+    }
+
+    Ok(())
+}
+
 /// Check if a cubic Bézier is effectively a straight line
 /// (control points lie close to the start-end line).
 fn is_linear_curve(curve: &BezierCurve) -> bool {
@@ -739,6 +826,45 @@ mod tests {
             // Control points should be within reasonable bounds
             assert!(curve.control1.x >= -2.0 && curve.control1.x <= 6.0);
             assert!(curve.control1.y >= -2.0 && curve.control1.y <= 7.0);
+        }
+    }
+
+    #[test]
+    fn test_bezier_to_svg_path_to_matches_string_version() {
+        let fitter = BezierFitter::new(2.0);
+        let points = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 5.0, y: 10.0 },
+            Point { x: 10.0, y: 10.0 },
+            Point { x: 15.0, y: 0.0 },
+        ];
+        let curves = fitter.fit_path(&points, true);
+
+        let string_version = bezier_to_svg_path(&curves, true);
+
+        let mut buf = Vec::new();
+        bezier_to_svg_path_to(&mut buf, &curves, true).unwrap();
+        let writer_version = String::from_utf8(buf).unwrap();
+
+        assert_eq!(string_version, writer_version);
+    }
+
+    #[test]
+    fn test_bezier_to_svg_path_to_empty_returns_empty() {
+        let mut buf = Vec::new();
+        bezier_to_svg_path_to(&mut buf, &[], true).unwrap();
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_fmt_num_to_matches_fmt_num() {
+        let values = [0.0, 1.0, 1.5, 2.25, 10.0, 10.10, 10.01];
+        for &v in &values {
+            let expected = fmt_num(v);
+            let mut buf = Vec::new();
+            fmt_num_to(&mut buf, v).unwrap();
+            let actual = String::from_utf8(buf).unwrap();
+            assert_eq!(actual, expected, "fmt_num mismatch for {}", v);
         }
     }
 }

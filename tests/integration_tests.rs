@@ -412,3 +412,30 @@ fn test_load_webp_input() {
 
     let _ = fs::remove_file(&test_img);
 }
+
+#[test]
+fn test_load_animated_gif() {
+    let test_gif = PathBuf::from("/tmp/img2svg_test_input.gif");
+
+    // Create a simple static GIF (image crate handles GIF encoding via save_buffer)
+    let mut pixel_data: Vec<u8> = Vec::with_capacity(10 * 10 * 4);
+    for _ in 0..(10 * 10) {
+        pixel_data.push(255); // R
+        pixel_data.push(0);   // G
+        pixel_data.push(0);   // B
+        pixel_data.push(255); // A
+    }
+    image::save_buffer(&test_gif, &pixel_data, 10, 10, image::ColorType::Rgba8)
+        .expect("Failed to create test GIF");
+
+    // load_animated_gif should work for static GIFs too (returns single frame)
+    let frames = img2svg::load_animated_gif(&test_gif).expect("Failed to load GIF");
+    assert_eq!(frames.len(), 1, "Static GIF should return 1 frame");
+    assert_eq!(frames[0].image_data.width, 10);
+    assert_eq!(frames[0].image_data.height, 10);
+
+    let first_pixel = frames[0].image_data.pixels[0];
+    assert!(first_pixel.r > 200, "Frame should be red");
+
+    let _ = fs::remove_file(&test_gif);
+}

@@ -7,7 +7,7 @@
 //!
 //! The original marching-squares pipeline is preserved in vectorizer.rs for comparison.
 
-use crate::bezier_fitter::{bezier_to_svg_path, BezierCurve, BezierFitter};
+use crate::bezier_fitter::{bezier_to_svg_path_to, BezierCurve, BezierFitter};
 use crate::edge_detector::detect_edges_sobel;
 use crate::enhanced_quantizer::{adaptive_color_count, count_distinct_colors, quantize_edge_aware};
 use crate::image_processor::ImageData;
@@ -464,6 +464,10 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
 ///
 /// This avoids building the entire SVG string in memory, which is
 /// beneficial for very large or complex images.
+///
+/// **Zero-allocation path streaming**: Paths are streamed directly without
+/// collecting them into intermediate `ColorGroup` vectors or `path_data` strings.
+/// A single reusable scratch buffer is used per color group.
 pub fn generate_enhanced_svg_to<W: Write>(
     data: &EnhancedVectorData,
     writer: &mut W,
@@ -488,47 +492,77 @@ pub fn generate_enhanced_svg_to<W: Write>(
         data.width, data.height, bg_hex, bg_opacity
     )?;
 
-    // Group consecutive same-color paths
-    let groups = group_by_color(&data.paths);
+    // Stream paths directly: detect color changes on the fly instead of
+    // collecting all paths into a Vec<ColorGroup> first.
+    let mut scratch: Vec<u8> = Vec::with_capacity(4096);
+    let mut current_color: Option<(u8, u8, u8, u8)> = None;
+    let mut current_hex = String::with_capacity(7);
+    let mut has_data = false;
 
-    for group in &groups {
-        let color_hex = &group.color_hex;
+    for path in &data.paths {
+        let path_color = path.color;
 
-        // Collect subpath data into a temporary string (bounded by group size)
-        let mut path_data = String::new();
-        for path in &group.paths {
-            // Use pre-built SVG for thin stripe rects
-            if let Some(ref svg) = path.svg_override {
-                path_data.push_str(svg);
-                continue;
+        if current_color != Some(path_color) {
+            // Flush previous color group
+            if has_data {
+                let alpha = current_color.map(|c| c.3).unwrap_or(255);
+                let opacity_attr = if alpha < 255 {
+                    let op = (alpha as f64 / 255.0 * 100.0).round() / 100.0;
+                    format!(" fill-opacity=\"{}\" stroke-opacity=\"{}\"", op, op)
+                } else {
+                    String::new()
+                };
+                write!(
+                    writer,
+                    r#"  <path fill="{}" stroke="{}" stroke-width="0.5" stroke-linejoin="round"{} d=""#,
+                    current_hex, current_hex, opacity_attr
+                )?;
+                writer.write_all(&scratch)?;
+                writeln!(writer, r#""/>"#)?;
             }
-            // Skip degenerate subpaths (zero-area in both dimensions)
-            if !path.curves.is_empty() {
-                let (min_x, min_y, max_x, max_y) = curve_bounds(&path.curves);
-                if (max_x - min_x) < 1.0 && (max_y - min_y) < 1.0 {
-                    continue;
-                }
-            }
-            path_data.push_str(&bezier_to_svg_path(&path.curves, true));
+
+            current_color = Some(path_color);
+            current_hex = format!("#{:02x}{:02x}{:02x}", path_color.0, path_color.1, path_color.2);
+            scratch.clear();
+            has_data = false;
         }
 
-        if path_data.is_empty() {
-            continue;
+        let scratch_len_before = scratch.len();
+
+        if let Some(ref svg) = path.svg_override {
+            scratch.extend_from_slice(svg.as_bytes());
+        } else if !path.curves.is_empty() {
+            let (min_x, min_y, max_x, max_y) = curve_bounds(&path.curves);
+            if (max_x - min_x) < 1.0 && (max_y - min_y) < 1.0 {
+                // skip degenerate subpath
+            } else {
+                bezier_to_svg_path_to(&mut scratch, &path.curves, true)?;
+            }
+        } else {
+            bezier_to_svg_path_to(&mut scratch, &path.curves, true)?;
         }
 
-        // Gap-filling stroke matching fill color
-        let alpha = group.paths.first().map(|p| p.color.3).unwrap_or(255);
+        if scratch.len() > scratch_len_before {
+            has_data = true;
+        }
+    }
+
+    // Flush final color group
+    if has_data {
+        let alpha = current_color.map(|c| c.3).unwrap_or(255);
         let opacity_attr = if alpha < 255 {
             let op = (alpha as f64 / 255.0 * 100.0).round() / 100.0;
             format!(" fill-opacity=\"{}\" stroke-opacity=\"{}\"", op, op)
         } else {
             String::new()
         };
-        writeln!(
+        write!(
             writer,
-            "  <path fill=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"{} d=\"{}\"/>",
-            color_hex, color_hex, opacity_attr, path_data
+            r#"  <path fill="{}" stroke="{}" stroke-width="0.5" stroke-linejoin="round"{} d=""#,
+            current_hex, current_hex, opacity_attr
         )?;
+        writer.write_all(&scratch)?;
+        writeln!(writer, r#""/>"#)?;
     }
 
     writeln!(writer, "</svg>")?;
@@ -542,13 +576,10 @@ pub fn write_enhanced_svg(data: &EnhancedVectorData, output_path: &std::path::Pa
     Ok(())
 }
 
-struct ColorGroup {
-    color_hex: String,
-    paths: Vec<EnhancedPath>,
-}
-
-fn group_by_color(paths: &[EnhancedPath]) -> Vec<ColorGroup> {
-    let mut groups: Vec<ColorGroup> = Vec::new();
+/// Group consecutive same-color paths (kept for backward compatibility).
+/// The streaming `generate_enhanced_svg_to` no longer uses this.
+fn group_by_color(paths: &[EnhancedPath]) -> Vec<(String, Vec<EnhancedPath>)> {
+    let mut groups: Vec<(String, Vec<EnhancedPath>)> = Vec::new();
 
     for path in paths {
         if path.curves.is_empty() && path.svg_override.is_none() {
@@ -560,18 +591,14 @@ fn group_by_color(paths: &[EnhancedPath]) -> Vec<ColorGroup> {
             path.color.0, path.color.1, path.color.2
         );
 
-        // Only merge with immediately preceding group if same color
-        if let Some(last) = groups.last_mut() {
-            if last.color_hex == color_hex {
-                last.paths.push(path.clone());
+        if let Some((last_hex, last_paths)) = groups.last_mut() {
+            if *last_hex == color_hex {
+                last_paths.push(path.clone());
                 continue;
             }
         }
 
-        groups.push(ColorGroup {
-            color_hex,
-            paths: vec![path.clone()],
-        });
+        groups.push((color_hex, vec![path.clone()]));
     }
 
     groups
@@ -936,7 +963,7 @@ mod tests {
         ];
         let groups = group_by_color(&paths);
         assert_eq!(groups.len(), 2); // red group + blue group
-        assert_eq!(groups[0].paths.len(), 2); // two red paths merged
-        assert_eq!(groups[1].paths.len(), 1);
+        assert_eq!(groups[0].1.len(), 2); // two red paths merged
+        assert_eq!(groups[1].1.len(), 1);
     }
 }

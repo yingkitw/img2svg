@@ -17,6 +17,71 @@ use preprocessor::{preprocess, PreprocessOptions};
 use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions};
 use std::path::{Path, PathBuf};
 
+fn is_gif(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("gif"))
+        .unwrap_or(false)
+}
+
+/// Process an animated GIF file, outputting numbered SVG frames.
+fn process_animated_gif(
+    input_path: &Path,
+    output_prefix: &Path,
+    cli: &Cli,
+) -> Result<()> {
+    eprintln!("  Loading animated GIF...");
+    let frames = image_processor::load_animated_gif(input_path)?;
+    let total = frames.len();
+    eprintln!("  Found {} frame(s)", total);
+
+    let stem = output_prefix
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let parent = output_prefix.parent().unwrap_or(Path::new("."));
+
+    for (i, frame) in frames.iter().enumerate() {
+        let mut image_data = image_processor::resize_if_needed(frame.image_data.clone(), cli.max_size);
+
+        if cli.preprocess {
+            eprintln!("  Frame {}/{}: applying preprocessing...", i + 1, total);
+            let opts = PreprocessOptions::photo();
+            image_data = preprocess(&image_data, &opts)?;
+        }
+
+        let frame_name = format!("{}_{:03}.svg", stem, i + 1);
+        let out_path = parent.join(&frame_name);
+
+        if cli.original {
+            let vectorized_data = vectorizer::vectorize(
+                &image_data,
+                cli.colors,
+                cli.threshold,
+                cli.smooth,
+                cli.hierarchical,
+            )?;
+            if cli.advanced {
+                svg_generator::generate_svg_advanced(&vectorized_data, &out_path)?;
+            } else {
+                svg_generator::generate_svg(&vectorized_data, &out_path)?;
+            }
+        } else {
+            let options = EnhancedOptions {
+                num_colors: cli.colors,
+                preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
+                ..Default::default()
+            };
+            let vector_data = vectorize_enhanced(&image_data, &options)?;
+            write_enhanced_svg(&vector_data, &out_path)?;
+        }
+
+        eprintln!("  Frame {}/{} -> {}", i + 1, total, out_path.display());
+    }
+
+    Ok(())
+}
+
 /// Process a single image file.
 fn process_file(
     input_path: &Path,
@@ -111,7 +176,12 @@ fn main() -> Result<()> {
             out_path.set_extension("svg");
 
             eprintln!("[{}/{}] {} -> {}", count + errors + 1, total, path.display(), out_path.display());
-            match process_file(&path, &out_path, &cli) {
+            let result = if is_gif(&path) {
+                process_animated_gif(&path, &out_path, &cli)
+            } else {
+                process_file(&path, &out_path, &cli)
+            };
+            match result {
                 Ok(()) => count += 1,
                 Err(e) => {
                     eprintln!("  Error: {}", e);
@@ -130,7 +200,13 @@ fn main() -> Result<()> {
         });
 
         println!("Converting {} to {}...", cli.input.display(), output_path.display());
-        process_file(&cli.input, &output_path, &cli)?;
+
+        if is_gif(&cli.input) {
+            process_animated_gif(&cli.input, &output_path, &cli)?;
+        } else {
+            process_file(&cli.input, &output_path, &cli)?;
+        }
+
         println!("Conversion complete!");
     }
 

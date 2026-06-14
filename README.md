@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-349%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-377%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -43,7 +43,9 @@ Converting raster images to vector format is essential for:
 12. **Progress Logging**: Stage-by-stage progress output for large image conversions
 13. **Incremental SVG Generation**: Low-memory writer-based output for both pipelines (`generate_svg_to`, `generate_enhanced_svg_to`)
 14. **Gradient Detection**: `detect_gradient` identifies linear and radial gradients for native SVG `<linearGradient>` / `<radialGradient>` rendering
-15. **Flexible Usage**: CLI tool, Rust library, and MCP server
+15. **Animated GIF Support**: Converts each frame to a numbered SVG file (`output_001.svg`, `output_002.svg`, etc.)
+16. **CMYK Color Space Input**: `cmyk_to_rgb` conversion and JPEG APP14 marker detection for print workflow support
+17. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Examples & Quality
 

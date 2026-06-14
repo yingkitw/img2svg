@@ -65,7 +65,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 349 tests passing (181 lib + 142 bin + 7 MCP + 17 integration + 2 doctests)
+- ✅ 377 tests passing (193 lib + 154 bin + 10 MCP + 18 integration + 2 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -182,6 +182,8 @@ Recommended: img2svg -i lenna.png -o lenna.svg --preprocess -c 12
 - `convert_to_svg_string`
 - `vectorize_enhanced` / `write_enhanced_svg` / `generate_enhanced_svg`
 - Gradient detection (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
+- Animated GIF loading (`load_animated_gif`, `GifFrame`) and per-frame SVG conversion (`convert_animated_gif`)
+- CMYK color space support (`cmyk_to_rgb`, `image_data_from_cmyk`, `detect_color_space`, `ColorSpace`)
 - Image filters (`median_filter`, `weighted_median_filter`, `CannyEdgeDetector`, `UnsharpMask`, `HighBoostFilter`, `HistogramEqualizer`, `CLAHE`, `AdaptiveToneMapper`, `SmartThreshold`, etc.)
 
 ### Experimental

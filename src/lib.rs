@@ -72,7 +72,10 @@ pub use image_filters::{
     UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
 };
 /// Re-export image loading and quantization functions.
-pub use image_processor::{load_image, quantize_colors, ImageData};
+pub use image_processor::{
+    cmyk_to_rgb, detect_color_space, image_data_from_cmyk, load_animated_gif, load_image,
+    quantize_colors, ColorSpace, GifFrame, ImageData,
+};
 /// Re-export photo preprocessing functions.
 pub use preprocessor::{preprocess, PreprocessOptions};
 /// Re-export SVG generation functions.
@@ -182,6 +185,27 @@ pub fn convert_to_svg_string(
     let mut buffer = Vec::new();
     svg_generator::generate_svg_to(&vectorized_data, &mut buffer)?;
     Ok(String::from_utf8(buffer)?)
+}
+
+/// Convert an animated GIF to a vector of per-frame SVG strings.
+///
+/// Each frame is processed independently using the original pipeline.
+/// Returns `(svg_strings, delays_ms)` so callers can assemble an
+/// animated SVG or output individual files.
+pub fn convert_animated_gif(
+    frames: &[GifFrame],
+    options: &ConversionOptions,
+) -> Result<(Vec<String>, Vec<u32>)> {
+    let mut svgs = Vec::with_capacity(frames.len());
+    let mut delays = Vec::with_capacity(frames.len());
+
+    for frame in frames {
+        let svg = convert_to_svg_string(&frame.image_data, options)?;
+        svgs.push(svg);
+        delays.push(frame.delay_ms);
+    }
+
+    Ok((svgs, delays))
 }
 
 #[cfg(test)]

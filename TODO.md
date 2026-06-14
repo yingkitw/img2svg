@@ -89,22 +89,17 @@
 - [x] Streaming SVG generation for original pipeline (`generate_svg_to`, `write_subpath_to`, `write_multi_path_to`)
 - [x] Refactor `convert_to_svg_string` to use streaming `generate_svg_to`
 - [x] SVG gradient detection module (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
+- [x] Support for animated GIF input (frame-by-frame conversion to numbered SVGs)
+- [x] Support for CMYK color space input (`cmyk_to_rgb`, `detect_color_space`, `ColorSpace`)
 
 ## Pending 🚧
 
-### Core Features
-- [ ] SVG gradient detection for smoother gradient rendering
-- [ ] Support for CMYK color space input
-
 ### Performance
-- [ ] Streaming SVG generation for extremely large outputs — enhanced pipeline (`generate_enhanced_svg_to` done, could extend to fully zero-allocation path streaming)
-
-### Input/Output
-- [ ] Support for animated GIF input
+- [x] Streaming SVG generation for extremely large outputs — enhanced pipeline (`generate_enhanced_svg_to` now uses fully zero-allocation `bezier_to_svg_path_to`, no `ColorGroup` collection)
 
 ### MCP Server
-- [ ] Add streaming file reading for large images
-- [ ] Real-time progress notifications (notifications/progress) during conversion
+- [x] Add streaming file reading for large images (`max_size` parameter with auto-resize)
+- [x] Real-time progress notifications (`notifications/progress`) during conversion with `progress_token`
 
 ### Documentation
 - [ ] More example images demonstrating different use cases
