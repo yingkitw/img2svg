@@ -4,12 +4,13 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Result<()> {
-    let mut file = File::create(output_path)?;
+/// Write SVG directly to any `Write` implementor without building the entire
+/// output string in memory. This is the streaming equivalent of `generate_svg`.
+pub fn generate_svg_to<W: Write>(vectorized_data: &VectorizedData, writer: &mut W) -> Result<()> {
     let (bg_str, bg_opacity) = color_with_alpha(vectorized_data.background_color);
 
     writeln!(
-        file,
+        writer,
         r#"<svg width="{}" height="{}" viewBox="0 0 {} {}" xmlns="http://www.w3.org/2000/svg">"#,
         vectorized_data.width,
         vectorized_data.height,
@@ -17,7 +18,7 @@ pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Res
         vectorized_data.height
     )?;
     writeln!(
-        file,
+        writer,
         r#"  <rect width="{}" height="{}" fill="{}"{}/>"#,
         vectorized_data.width, vectorized_data.height, bg_str, bg_opacity
     )?;
@@ -25,17 +26,16 @@ pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Res
     for curve in &vectorized_data.curves {
         let (color_str, opacity_attr) = color_with_alpha(curve.color);
 
-        let path_str = if !curve.subpaths.is_empty() {
-            create_multi_path_string(&curve.subpaths)
+        // Stream path data directly to avoid building a large intermediate string
+        write!(writer, r#"  <path d=""#)?;
+        if !curve.subpaths.is_empty() {
+            write_multi_path_to(writer, &curve.subpaths)?;
         } else if !curve.points.is_empty() {
-            create_subpath_string(&curve.points, curve.is_closed)
+            write_subpath_to(writer, &curve.points, curve.is_closed)?;
         } else {
+            write!(writer, "\" fill=\"{}\"{} stroke=\"none\"/>\n", color_str, opacity_attr)?;
             continue;
         };
-
-        if path_str.is_empty() {
-            continue;
-        }
 
         let fill_rule = if has_holes(&curve.subpaths) {
             r#" fill-rule="evenodd""#
@@ -43,14 +43,20 @@ pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Res
             ""
         };
         writeln!(
-            file,
-            r#"  <path d="{}" fill="{}"{}{} stroke="none"/>"#,
-            path_str, color_str, opacity_attr, fill_rule
+            writer,
+            r#"" fill="{}"{}{} stroke="none"/>"#,
+            color_str, opacity_attr, fill_rule
         )?;
     }
 
-    writeln!(file, "</svg>")?;
+    writeln!(writer, "</svg>")?;
     Ok(())
+}
+
+/// Convenience wrapper that writes to a file path.
+pub fn generate_svg(vectorized_data: &VectorizedData, output_path: &Path) -> Result<()> {
+    let mut file = File::create(output_path)?;
+    generate_svg_to(vectorized_data, &mut file)
 }
 
 pub fn generate_svg_advanced(vectorized_data: &VectorizedData, output_path: &Path) -> Result<()> {
@@ -58,19 +64,27 @@ pub fn generate_svg_advanced(vectorized_data: &VectorizedData, output_path: &Pat
     generate_svg(vectorized_data, output_path)
 }
 
-/// Build a single SVG path `d` attribute containing multiple M...Z subpaths.
-pub fn create_multi_path_string(subpaths: &[Vec<Point>]) -> String {
-    let mut path = String::new();
+/// Stream multiple subpaths directly to a writer, separated by spaces.
+pub fn write_multi_path_to<W: Write>(writer: &mut W, subpaths: &[Vec<Point>]) -> Result<()> {
+    let mut first = true;
     for sp in subpaths {
         if sp.len() < 3 {
             continue;
         }
-        if !path.is_empty() {
-            path.push(' ');
+        if !first {
+            write!(writer, " ")?;
         }
-        path.push_str(&create_subpath_string(sp, true));
+        write_subpath_to(writer, sp, true)?;
+        first = false;
     }
-    path
+    Ok(())
+}
+
+/// Build a single SVG path `d` attribute containing multiple M...Z subpaths.
+pub fn create_multi_path_string(subpaths: &[Vec<Point>]) -> String {
+    let mut buf = Vec::new();
+    write_multi_path_to(&mut buf, subpaths).expect("in-memory write never fails");
+    String::from_utf8(buf).expect("SVG path data is valid UTF-8")
 }
 
 /// Return SVG hex color and optional fill-opacity attribute for (r,g,b,a).
@@ -94,25 +108,44 @@ fn fmt_coord(v: f64) -> String {
     }
 }
 
+/// Stream a single subpath directly to a writer.
+/// Avoids allocating an intermediate string.
+pub fn write_subpath_to<W: Write>(writer: &mut W, pts: &[Point], closed: bool) -> Result<()> {
+    let n = pts.len();
+    if n == 0 {
+        return Ok(());
+    }
+
+    write!(writer, "M{} {}", fmt_coord(pts[0].x), fmt_coord(pts[0].y))?;
+    let mut prev_x = fmt_coord(pts[0].x);
+    let mut prev_y = fmt_coord(pts[0].y);
+
+    for i in 1..n {
+        let x = fmt_coord(pts[i].x);
+        let y = fmt_coord(pts[i].y);
+        if x == prev_x && y == prev_y {
+            continue;
+        }
+        write!(writer, "L{} {}", x, y)?;
+        prev_x = x;
+        prev_y = y;
+    }
+    if closed {
+        write!(writer, "Z")?;
+    }
+    Ok(())
+}
+
 /// Convert a single list of points into an SVG subpath using line segments.
 /// Marching squares + RDP already produces accurate contours; line segments
 /// are compact and browsers anti-alias them smoothly.
+///
+/// Zero-length segments (where consecutive points format to the same coordinate)
+/// are automatically removed to minimize SVG size.
 pub fn create_subpath_string(pts: &[Point], closed: bool) -> String {
-    let n = pts.len();
-    if n == 0 {
-        return String::new();
-    }
-
-    let mut path = format!("M{} {}", fmt_coord(pts[0].x), fmt_coord(pts[0].y));
-
-    for i in 1..n {
-        path.push_str(&format!("L{} {}", fmt_coord(pts[i].x), fmt_coord(pts[i].y)));
-    }
-    if closed {
-        path.push('Z');
-    }
-
-    path
+    let mut buf = Vec::new();
+    write_subpath_to(&mut buf, pts, closed).expect("in-memory write never fails");
+    String::from_utf8(buf).expect("SVG path data is valid UTF-8")
 }
 
 #[cfg(test)]

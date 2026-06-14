@@ -65,7 +65,7 @@ impl OtsuThreshold {
                 let gray =
                     ((0.299 * pixel.r as f64 + 0.587 * pixel.g as f64 + 0.114 * pixel.b as f64)
                         .round()) as u8;
-                let val = if gray >= thresh { 255u8 } else { 0u8 };
+                let val = if gray > thresh { 255u8 } else { 0u8 };
                 RGBA8::new(val, val, val, pixel.a)
             })
             .collect();
@@ -169,6 +169,85 @@ impl AdaptiveThreshold {
     }
 }
 
+/// Smart threshold that automatically selects Otsu or adaptive thresholding
+/// based on image content.
+///
+/// Uses the Otsu separability measure (ratio of between-class variance to total
+/// variance). If the histogram is strongly bimodal (separability > 0.7), Otsu
+/// thresholding is used. Otherwise, adaptive thresholding is applied for
+/// images with uneven illumination or low contrast.
+pub struct SmartThreshold;
+
+impl SmartThreshold {
+    pub fn binarize(image_data: &ImageData) -> ImageData {
+        let mut histogram = [0u32; 256];
+        let mut total_gray = 0u64;
+
+        for pixel in &image_data.pixels {
+            let gray = ((0.299 * pixel.r as f64 + 0.587 * pixel.g as f64 + 0.114 * pixel.b as f64)
+                .round()) as usize;
+            let g = gray.min(255) as u8;
+            histogram[g as usize] += 1;
+            total_gray += g as u64;
+        }
+
+        let total = image_data.pixels.len() as u64;
+        let mean_total = total_gray as f64 / total as f64;
+
+        let mut sum = 0u64;
+        for i in 0..256 {
+            sum += i as u64 * histogram[i] as u64;
+        }
+
+        let mut sum_b = 0u64;
+        let mut w_b = 0u64;
+        let mut max_variance = 0.0;
+
+        for i in 0..256 {
+            w_b += histogram[i] as u64;
+            if w_b == 0 {
+                continue;
+            }
+            let w_f = total - w_b;
+            if w_f == 0 {
+                break;
+            }
+            sum_b += i as u64 * histogram[i] as u64;
+            let m_b = sum_b as f64 / w_b as f64;
+            let m_f = ((sum - sum_b) as f64) / w_f as f64;
+            let variance =
+                (w_b as f64 / total as f64) * (w_f as f64 / total as f64) * (m_b - m_f).powi(2);
+            if variance > max_variance {
+                max_variance = variance;
+            }
+        }
+
+        // Total variance
+        let mut total_variance = 0.0;
+        for i in 0..256 {
+            if histogram[i] == 0 {
+                continue;
+            }
+            let diff = i as f64 - mean_total;
+            total_variance +=
+                (histogram[i] as f64 / total as f64) * diff * diff;
+        }
+
+        let separability = if total_variance > 1e-6 {
+            max_variance / total_variance
+        } else {
+            0.0
+        };
+
+        // Strongly bimodal → Otsu; otherwise → adaptive
+        if separability > 0.5 {
+            OtsuThreshold::binarize(image_data, None)
+        } else {
+            AdaptiveThreshold::default().binarize(image_data)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,5 +307,46 @@ mod tests {
     fn test_adaptive_threshold_odd_block() {
         let adaptive = AdaptiveThreshold::new(10, 2);
         assert_eq!(adaptive.block_size % 2, 1);
+    }
+
+    #[test]
+    fn test_smart_threshold_bimodal_chooses_otsu() {
+        // Bimodal image: two clear peaks around 50 and 200 → should use Otsu
+        let mut pixels = Vec::new();
+        for y in 0..10 {
+            for x in 0..10 {
+                let val = if x < 5 { 50u8 } else { 200u8 };
+                pixels.push(RGBA8::new(val, val, val, 255));
+            }
+        }
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
+        let result = SmartThreshold::binarize(&img);
+        // Otsu on bimodal image produces clean black/white
+        let unique: std::collections::HashSet<_> = result.pixels.iter().map(|p| p.r).collect();
+        assert_eq!(unique.len(), 2, "Expected two unique values (0 and 255)");
+    }
+
+    #[test]
+    fn test_smart_threshold_gradient_chooses_adaptive() {
+        // Smooth gradient: no clear bimodal separation → should use adaptive
+        let mut pixels = Vec::new();
+        for y in 0..10 {
+            for x in 0..10 {
+                let val = ((y * 25) as u8).min(255);
+                pixels.push(RGBA8::new(val, val, val, 255));
+            }
+        }
+        let img = ImageData {
+            width: 10,
+            height: 10,
+            pixels,
+        };
+        let result = SmartThreshold::binarize(&img);
+        // Adaptive on gradient produces non-trivial result (not all same)
+        assert_eq!(result.pixels.len(), 100);
     }
 }

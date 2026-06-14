@@ -34,6 +34,8 @@ pub mod edge_detector;
 pub mod enhanced_quantizer;
 /// Enhanced vectorization pipeline: marching squares → Bézier curves.
 pub mod enhanced_vectorizer;
+/// Linear and radial gradient detection for smoother SVG gradient fills.
+pub mod gradient_detector;
 /// Comprehensive image processing filters (noise reduction, edge enhancement,
 /// contrast adjustment, thresholding, morphology, color operations, effects).
 pub mod image_filters;
@@ -54,23 +56,29 @@ pub mod vectorizer;
 pub use anyhow::Result;
 /// Re-export enhanced vectorization pipeline types and functions.
 pub use enhanced_vectorizer::{
-    generate_enhanced_svg, vectorize_enhanced, write_enhanced_svg, EnhancedOptions, EnhancedPath,
-    EnhancedVectorData,
+    generate_enhanced_svg, generate_enhanced_svg_to, vectorize_enhanced, write_enhanced_svg,
+    EnhancedOptions, EnhancedPath, EnhancedVectorData,
 };
 /// Re-export image filter functions and types.
+pub use gradient_detector::{
+    detect_gradient, detect_linear_gradient, detect_radial_gradient, DetectedGradient,
+    LinearGradient, RadialGradient,
+};
 pub use image_filters::{
     median_filter, prewitt_edge_detection, roberts_edge_detection, weighted_median_filter,
     AdaptiveThreshold, AdaptiveToneMapper, CannyEdgeDetector, ColorOps, ColorTemperature,
     EmbossFilter, GammaCorrection, HighBoostFilter, HistogramEqualizer, LaplacianSharpen,
-    MorphologyKind, MorphologyOp, OtsuThreshold, Saturation, SepiaFilter, UnsharpMask,
-    VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
+    MorphologyKind, MorphologyOp, OtsuThreshold, Saturation, SepiaFilter, SmartThreshold,
+    UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
 };
 /// Re-export image loading and quantization functions.
 pub use image_processor::{load_image, quantize_colors, ImageData};
 /// Re-export photo preprocessing functions.
 pub use preprocessor::{preprocess, PreprocessOptions};
 /// Re-export SVG generation functions.
-pub use svg_generator::{generate_svg, generate_svg_advanced};
+pub use svg_generator::{
+    generate_svg, generate_svg_advanced, generate_svg_to, write_multi_path_to, write_subpath_to,
+};
 /// Re-export original vectorization pipeline types and functions.
 pub use vectorizer::{vectorize, Curve, Point, VectorizedData};
 
@@ -171,52 +179,8 @@ pub fn convert_to_svg_string(
         options.hierarchical,
     )?;
 
-    // Generate SVG to a temporary location, then read it back
-    use std::io::Write;
     let mut buffer = Vec::new();
-
-    // Write SVG header
-    let (bg_str, bg_opacity) = svg_generator::color_with_alpha(vectorized_data.background_color);
-
-    writeln!(
-        &mut buffer,
-        r#"<svg width="{}" height="{}" viewBox="0 0 {} {}" xmlns="http://www.w3.org/2000/svg">"#,
-        vectorized_data.width,
-        vectorized_data.height,
-        vectorized_data.width,
-        vectorized_data.height
-    )?;
-    writeln!(
-        &mut buffer,
-        r#"  <rect width="{}" height="{}" fill="{}"{}/>"#,
-        vectorized_data.width, vectorized_data.height, bg_str, bg_opacity
-    )?;
-
-    // Write curves
-    for curve in &vectorized_data.curves {
-        let (color_str, opacity_attr) = svg_generator::color_with_alpha(curve.color);
-
-        let path_str = if !curve.subpaths.is_empty() {
-            svg_generator::create_multi_path_string(&curve.subpaths)
-        } else if !curve.points.is_empty() {
-            svg_generator::create_subpath_string(&curve.points, curve.is_closed)
-        } else {
-            continue;
-        };
-
-        if path_str.is_empty() {
-            continue;
-        }
-
-        writeln!(
-            &mut buffer,
-            r#"  <path d="{}" fill="{}"{} stroke="none"/>"#,
-            path_str, color_str, opacity_attr
-        )?;
-    }
-
-    writeln!(&mut buffer, "</svg>")?;
-
+    svg_generator::generate_svg_to(&vectorized_data, &mut buffer)?;
     Ok(String::from_utf8(buffer)?)
 }
 

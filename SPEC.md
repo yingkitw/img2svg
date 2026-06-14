@@ -65,7 +65,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 328 tests passing (169 lib + 137 bin + 6 MCP + 14 integration + 2 doctests)
+- ✅ 349 tests passing (181 lib + 142 bin + 7 MCP + 17 integration + 2 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -174,14 +174,17 @@ Recommended: img2svg -i lenna.png -o lenna.svg --preprocess -c 12
 - `load_image`
 - `quantize_colors`
 - `vectorize` (hierarchical mode fully functional)
-- `generate_svg` (alpha channel + evenodd fill-rule support)
+- `generate_svg` (alpha channel + evenodd fill-rule support, zero-length segment removal)
 - `generate_svg_advanced`
+- `generate_svg_to` / `write_subpath_to` / `write_multi_path_to` (streaming writer-based SVG generation for original pipeline)
+- `generate_enhanced_svg_to` (incremental writer-based SVG generation for enhanced pipeline)
 - `convert`
 - `convert_to_svg_string`
 - `vectorize_enhanced` / `write_enhanced_svg` / `generate_enhanced_svg`
-- Image filters (`median_filter`, `weighted_median_filter`, `CannyEdgeDetector`, `UnsharpMask`, `HighBoostFilter`, `HistogramEqualizer`, `CLAHE`, `AdaptiveToneMapper`, etc.)
+- Gradient detection (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
+- Image filters (`median_filter`, `weighted_median_filter`, `CannyEdgeDetector`, `UnsharpMask`, `HighBoostFilter`, `HistogramEqualizer`, `CLAHE`, `AdaptiveToneMapper`, `SmartThreshold`, etc.)
 
 ### Experimental
 - `preprocess` API (may change parameters)
 - Advanced SVG generation with layers
-- MCP server tool parameters
+- MCP real-time progress notifications (notifications/progress)

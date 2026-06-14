@@ -79,6 +79,16 @@
 - [x] High-boost filtering
 - [x] Adaptive tone mapping
 - [x] Rand 0.10 API compatibility fix (`rng()` / `random_range` / `random`)
+- [x] Incremental SVG generation for enhanced pipeline (writer-based `generate_enhanced_svg_to`)
+- [x] SVG path string optimization (zero-length segment removal in `create_subpath_string`)
+- [x] Integration tests for JPEG and BMP input formats
+- [x] SmartThreshold: auto-selects Otsu vs adaptive based on histogram separability
+- [x] WebP input format integration test
+- [x] MCP `preprocess` parameter (uses enhanced Bézier pipeline when enabled)
+- [x] MCP detailed result info (pipeline, output_size_bytes, width, height, colors_used)
+- [x] Streaming SVG generation for original pipeline (`generate_svg_to`, `write_subpath_to`, `write_multi_path_to`)
+- [x] Refactor `convert_to_svg_string` to use streaming `generate_svg_to`
+- [x] SVG gradient detection module (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
 
 ## Pending 🚧
 
@@ -87,17 +97,14 @@
 - [ ] Support for CMYK color space input
 
 ### Performance
-- [ ] Incremental SVG generation for memory-constrained environments
+- [ ] Streaming SVG generation for extremely large outputs — enhanced pipeline (`generate_enhanced_svg_to` done, could extend to fully zero-allocation path streaming)
 
 ### Input/Output
-- [ ] Test JPEG, WebP, BMP input formats thoroughly
-- [ ] SVG optimization (remove redundant points, merge adjacent paths)
 - [ ] Support for animated GIF input
 
 ### MCP Server
 - [ ] Add streaming file reading for large images
-- [ ] Add progress callbacks to MCP tool responses
-- [ ] Support for custom preprocessing parameters in MCP
+- [ ] Real-time progress notifications (notifications/progress) during conversion
 
 ### Documentation
 - [ ] More example images demonstrating different use cases
@@ -105,7 +112,6 @@
 
 ### Advanced Features
 - [ ] Superpixel segmentation as alternative to color quantization
-- [ ] Adaptive threshold based on image content
 - [ ] Interactive mode for parameter tuning with live preview
 - [ ] Export to other vector formats (PDF, EPS, AI)
 

@@ -392,4 +392,91 @@ mod tests {
         // Second subpath should be included
         assert!(result.contains("M20 20"));
     }
+
+    #[test]
+    fn test_create_subpath_string_removes_zero_length_segments() {
+        // Points that format to the same coordinate should produce no L segment
+        let pts = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 0.1, y: 0.1 }, // fmt_coord snaps to 0.0, 0.0
+            Point { x: 0.0, y: 0.0 }, // duplicate
+            Point { x: 10.0, y: 10.0 },
+        ];
+        let result = create_subpath_string(&pts, true);
+        // Should only have M and one L, not three L commands
+        assert_eq!(result, "M0 0L10 10Z");
+    }
+
+    #[test]
+    fn test_generate_svg_to_matches_file_output() {
+        let data = VectorizedData {
+            width: 100,
+            height: 100,
+            background_color: (255, 255, 255, 255),
+            curves: vec![
+                Curve {
+                    points: vec![],
+                    color: (255, 0, 0, 255),
+                    is_closed: true,
+                    subpaths: vec![
+                        vec![
+                            Point { x: 10.0, y: 10.0 },
+                            Point { x: 90.0, y: 10.0 },
+                            Point { x: 90.0, y: 90.0 },
+                            Point { x: 10.0, y: 90.0 },
+                        ],
+                    ],
+                },
+            ],
+        };
+        let file_path = PathBuf::from("/tmp/test_svg_to.svg");
+        generate_svg(&data, &file_path).unwrap();
+        let from_file = std::fs::read_to_string(&file_path).unwrap();
+
+        let mut buffer = Vec::new();
+        generate_svg_to(&data, &mut buffer).unwrap();
+        let from_writer = String::from_utf8(buffer).unwrap();
+
+        assert_eq!(from_file, from_writer);
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_write_subpath_to_matches_string_version() {
+        let pts = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 5.0, y: 0.0 },
+            Point { x: 5.0, y: 5.0 },
+        ];
+        let string_version = create_subpath_string(&pts, true);
+
+        let mut buf = Vec::new();
+        write_subpath_to(&mut buf, &pts, true).unwrap();
+        let writer_version = String::from_utf8(buf).unwrap();
+
+        assert_eq!(string_version, writer_version);
+    }
+
+    #[test]
+    fn test_write_multi_path_to_matches_string_version() {
+        let subpaths = vec![
+            vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 10.0, y: 0.0 },
+                Point { x: 10.0, y: 10.0 },
+            ],
+            vec![
+                Point { x: 20.0, y: 20.0 },
+                Point { x: 30.0, y: 20.0 },
+                Point { x: 30.0, y: 30.0 },
+            ],
+        ];
+        let string_version = create_multi_path_string(&subpaths);
+
+        let mut buf = Vec::new();
+        write_multi_path_to(&mut buf, &subpaths).unwrap();
+        let writer_version = String::from_utf8(buf).unwrap();
+
+        assert_eq!(string_version, writer_version);
+    }
 }

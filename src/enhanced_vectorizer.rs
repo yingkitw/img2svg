@@ -452,14 +452,27 @@ fn polygon_area(points: &[Point]) -> f64 {
 /// Generate SVG string from enhanced vector data.
 /// Uses gap-filling strokes and consecutive same-color path grouping.
 pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
-    let curve_count: usize = data.paths.iter().map(|p| p.curves.len()).sum();
-    let mut svg = String::with_capacity(200 + curve_count * 80);
+    let mut buffer = Vec::new();
+    if let Err(e) = generate_enhanced_svg_to(data, &mut buffer) {
+        // This should not fail for an in-memory Vec, but propagate just in case
+        panic!("Failed to generate enhanced SVG: {}", e);
+    }
+    String::from_utf8(buffer).expect("SVG is valid UTF-8")
+}
 
-    svg.push_str(&format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">
-"#,
+/// Incrementally write enhanced SVG to any `Write` implementor.
+///
+/// This avoids building the entire SVG string in memory, which is
+/// beneficial for very large or complex images.
+pub fn generate_enhanced_svg_to<W: Write>(
+    data: &EnhancedVectorData,
+    writer: &mut W,
+) -> Result<()> {
+    writeln!(
+        writer,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">"#,
         data.width, data.height, data.width, data.height
-    ));
+    )?;
 
     // Background rect
     let bg = data.background_color;
@@ -469,10 +482,11 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
     } else {
         String::new()
     };
-    svg.push_str(&format!(
-        "  <rect width=\"{}\" height=\"{}\" fill=\"{}\"{} />\n",
+    writeln!(
+        writer,
+        "  <rect width=\"{}\" height=\"{}\" fill=\"{}\"{} />",
         data.width, data.height, bg_hex, bg_opacity
-    ));
+    )?;
 
     // Group consecutive same-color paths
     let groups = group_by_color(&data.paths);
@@ -480,7 +494,7 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
     for group in &groups {
         let color_hex = &group.color_hex;
 
-        // Collect subpath data
+        // Collect subpath data into a temporary string (bounded by group size)
         let mut path_data = String::new();
         for path in &group.paths {
             // Use pre-built SVG for thin stripe rects
@@ -510,21 +524,21 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
         } else {
             String::new()
         };
-        svg.push_str(&format!(
-            "  <path fill=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"{} d=\"{}\"/>\n",
+        writeln!(
+            writer,
+            "  <path fill=\"{}\" stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"{} d=\"{}\"/>",
             color_hex, color_hex, opacity_attr, path_data
-        ));
+        )?;
     }
 
-    svg.push_str("</svg>");
-    svg
+    writeln!(writer, "</svg>")?;
+    Ok(())
 }
 
-/// Write enhanced SVG to a file.
+/// Write enhanced SVG to a file incrementally (low memory footprint).
 pub fn write_enhanced_svg(data: &EnhancedVectorData, output_path: &std::path::Path) -> Result<()> {
-    let svg = generate_enhanced_svg(data);
     let mut file = std::fs::File::create(output_path)?;
-    file.write_all(svg.as_bytes())?;
+    generate_enhanced_svg_to(data, &mut file)?;
     Ok(())
 }
 
@@ -840,6 +854,47 @@ mod tests {
         };
         let svg = generate_enhanced_svg(&data);
         assert!(svg.contains("fill-opacity=\"0.25\""));
+    }
+
+    #[test]
+    fn test_generate_enhanced_svg_to_matches_string_version() {
+        let paths = vec![
+            EnhancedPath {
+                curves: vec![BezierCurve {
+                    start: Point { x: 0.0, y: 0.0 },
+                    control1: Point { x: 1.0, y: 1.0 },
+                    control2: Point { x: 2.0, y: 1.0 },
+                    end: Point { x: 3.0, y: 0.0 },
+                }],
+                color: (255, 0, 0, 128),
+                area: 100,
+                svg_override: None,
+            },
+            EnhancedPath {
+                curves: vec![BezierCurve {
+                    start: Point { x: 5.0, y: 5.0 },
+                    control1: Point { x: 6.0, y: 6.0 },
+                    control2: Point { x: 7.0, y: 6.0 },
+                    end: Point { x: 8.0, y: 5.0 },
+                }],
+                color: (0, 255, 0, 255),
+                area: 50,
+                svg_override: None,
+            },
+        ];
+        let data = EnhancedVectorData {
+            width: 10,
+            height: 10,
+            background_color: (255, 255, 255, 255),
+            paths,
+        };
+        let svg_string = generate_enhanced_svg(&data);
+
+        let mut buffer = Vec::new();
+        generate_enhanced_svg_to(&data, &mut buffer).unwrap();
+        let svg_from_writer = String::from_utf8(buffer).unwrap();
+
+        assert_eq!(svg_string, svg_from_writer);
     }
 
     #[test]

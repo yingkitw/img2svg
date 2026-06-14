@@ -14,7 +14,7 @@ pub use self::contrast::{AdaptiveToneMapper, HistogramEqualizer, CLAHE};
 pub use self::effects::{EdgeGlowFilter, EmbossFilter, SepiaFilter, VignetteFilter, VintageFilter};
 pub use self::enhancement::{GammaCorrection, HighBoostFilter, LaplacianSharpen, UnsharpMask};
 pub use self::morphology::{MorphologyKind, MorphologyOp};
-pub use self::thresholding::{AdaptiveThreshold, OtsuThreshold};
+pub use self::thresholding::{AdaptiveThreshold, OtsuThreshold, SmartThreshold};
 
 mod canny;
 mod color_ops;

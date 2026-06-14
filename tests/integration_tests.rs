@@ -373,3 +373,42 @@ fn test_enhanced_auto_color_count_zero() {
 
     let _ = fs::remove_file(&test_img);
 }
+
+#[test]
+fn test_load_jpeg_input() {
+    let test_img = PathBuf::from("/tmp/img2svg_test_input.jpg");
+    create_test_png(&test_img, 30, 30, "checkerboard");
+
+    let image_data = load_image(&test_img).expect("Failed to load JPEG");
+    assert_eq!(image_data.width, 30);
+    assert_eq!(image_data.height, 30);
+    assert_eq!(image_data.pixels.len(), 30 * 30);
+
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_load_bmp_input() {
+    let test_img = PathBuf::from("/tmp/img2svg_test_input.bmp");
+    create_test_png(&test_img, 30, 30, "solid");
+
+    let image_data = load_image(&test_img).expect("Failed to load BMP");
+    assert_eq!(image_data.width, 30);
+    assert_eq!(image_data.height, 30);
+    assert_eq!(image_data.pixels.len(), 30 * 30);
+
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_load_webp_input() {
+    let test_img = PathBuf::from("/tmp/img2svg_test_input.webp");
+    create_test_png(&test_img, 30, 30, "checkerboard");
+
+    let image_data = load_image(&test_img).expect("Failed to load WebP");
+    assert_eq!(image_data.width, 30);
+    assert_eq!(image_data.height, 30);
+    assert_eq!(image_data.pixels.len(), 30 * 30);
+
+    let _ = fs::remove_file(&test_img);
+}

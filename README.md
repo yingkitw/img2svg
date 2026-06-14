@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-328%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-349%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -37,11 +37,13 @@ Converting raster images to vector format is essential for:
 6. **Batch Processing**: Convert entire directories with `img2svg -i dir/ -o out/`
 7. **Large Image Safety**: Auto-resize images exceeding `--max-size` to prevent OOM
 8. **Fast LUT Bilateral Filter**: Precomputed range-weight LUT with fixed-point arithmetic
-9. **Image filter toolkit**: Optional building blocks (Canny, morphology, CLAHE, unsharp mask, high-boost, adaptive tone mapping, weighted median, thresholding, color ops) for custom preprocessing or experiments
+9. **Image filter toolkit**: Optional building blocks (Canny, morphology, CLAHE, unsharp mask, high-boost, adaptive tone mapping, weighted median, smart thresholding, color ops) for custom preprocessing or experiments
 10. **Transparency Support**: Alpha channel preserved as `fill-opacity`/`stroke-opacity` in SVG output
 11. **Hierarchical Decomposition**: `--hierarchical` mode preserves hole contours with `fill-rule="evenodd"`
 12. **Progress Logging**: Stage-by-stage progress output for large image conversions
-13. **Flexible Usage**: CLI tool, Rust library, and MCP server
+13. **Incremental SVG Generation**: Low-memory writer-based output for both pipelines (`generate_svg_to`, `generate_enhanced_svg_to`)
+14. **Gradient Detection**: `detect_gradient` identifies linear and radial gradients for native SVG `<linearGradient>` / `<radialGradient>` rendering
+15. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Examples & Quality
 
@@ -316,6 +318,13 @@ The MCP server provides one tool:
   - `num_colors` (optional): Number of colors (1-64, default: 16)
   - `smooth_level` (optional): Smoothing level (0-10, default: 5)
   - `threshold` (optional): Edge detection threshold (0.0-1.0, default: 0.1)
+  - `preprocess` (optional): Use the enhanced Bézier pipeline with preprocessing (default: false)
+
+**Response details**: When conversion succeeds, the result includes a `details` object with:
+- `pipeline`: `"legacy"` or `"enhanced"` depending on `preprocess`
+- `output_size_bytes`: Size of the generated SVG file
+- `width` / `height`: Image dimensions (enhanced pipeline only)
+- `colors_used`: Number of color paths in the output
 
 ## Algorithm
 
@@ -332,7 +341,7 @@ img2svg uses a sophisticated multi-stage pipeline (default Bézier pipeline):
 9. **Visvalingam-Whyatt Simplification**: Area-based point removal with corner preservation
 10. **Edge Snapping + Corner Injection**: Points snapped to image edges; 90° corners injected at edge transitions
 11. **Cubic Bézier Fitting**: Least-squares fit with Newton-Raphson reparameterization + G1 continuity
-12. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes, alpha channel support, evenodd fill-rule for holes
+12. **SVG Generation**: `L` for lines, `C` for curves, collinear merge, gap-filling strokes, alpha channel support, evenodd fill-rule for holes, zero-length segment elimination
 
 The original pipeline (`--original`) uses median-cut quantization, RDP simplification, and line-segment SVG paths.
 

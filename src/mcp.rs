@@ -4,7 +4,9 @@
 //! through the Model Context Protocol, allowing AI assistants to convert images
 //! to SVG format.
 
-use img2svg::{convert, ConversionOptions};
+use img2svg::{
+    convert, load_image, vectorize_enhanced, write_enhanced_svg, ConversionOptions, EnhancedOptions,
+};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -49,6 +51,13 @@ struct McpResponse {
 struct McpError {
     code: i32,
     message: String,
+}
+
+struct ConversionInfo {
+    width: u32,
+    height: u32,
+    colors_used: usize,
+    pipeline: &'static str,
 }
 
 struct Img2SvgMcpServer;
@@ -114,6 +123,11 @@ impl Img2SvgMcpServer {
                                     "minimum": 0.0,
                                     "maximum": 1.0,
                                     "default": 0.1
+                                },
+                                "preprocess": {
+                                    "type": "boolean",
+                                    "description": "Apply edge-preserving smoothing and color reduction before vectorization. Uses the enhanced Bézier pipeline when enabled.",
+                                    "default": false
                                 }
                             },
                             "required": ["input_path", "output_path"]
@@ -147,38 +161,90 @@ impl Img2SvgMcpServer {
                 let num_colors = args.get("num_colors").and_then(|v| v.as_i64()).unwrap_or(16) as usize;
                 let smooth_level = args.get("smooth_level").and_then(|v| v.as_i64()).unwrap_or(5) as u8;
                 let threshold = args.get("threshold").and_then(|v| v.as_f64()).unwrap_or(0.1);
+                let preprocess = args.get("preprocess").and_then(|v| v.as_bool()).unwrap_or(false);
 
                 match (input_path, output_path) {
                     (Some(input), Some(output)) => {
-                        let options = ConversionOptions {
-                            num_colors,
-                            smooth_level,
-                            threshold,
-                            hierarchical: false,
-                            advanced: false,
+                        let result = if preprocess {
+                            // Enhanced pipeline with optional preprocessing
+                            match load_image(Path::new(input)) {
+                                Ok(image_data) => {
+                                    let opts = EnhancedOptions {
+                                        num_colors,
+                                        preprocess: true,
+                                        ..Default::default()
+                                    };
+                                    match vectorize_enhanced(&image_data, &opts) {
+                                        Ok(data) => {
+                                            let info = ConversionInfo {
+                                                width: data.width,
+                                                height: data.height,
+                                                colors_used: data.paths.len(),
+                                                pipeline: "enhanced",
+                                            };
+                                            match write_enhanced_svg(&data, Path::new(output)) {
+                                                Ok(()) => Ok(info),
+                                                Err(e) => Err(format!("SVG write failed: {}", e)),
+                                            }
+                                        }
+                                        Err(e) => Err(format!("Vectorization failed: {}", e)),
+                                    }
+                                }
+                                Err(e) => Err(format!("Image load failed: {}", e)),
+                            }
+                        } else {
+                            // Legacy pipeline
+                            let options = ConversionOptions {
+                                num_colors,
+                                smooth_level,
+                                threshold,
+                                hierarchical: false,
+                                advanced: false,
+                            };
+                            match convert(Path::new(input), Path::new(output), &options) {
+                                Ok(()) => Ok(ConversionInfo {
+                                    width: 0,
+                                    height: 0,
+                                    colors_used: num_colors,
+                                    pipeline: "legacy",
+                                }),
+                                Err(e) => Err(format!("Conversion failed: {}", e)),
+                            }
                         };
 
-                        match convert(Path::new(input), Path::new(output), &options) {
-                            Ok(()) => McpResponse {
-                                jsonrpc: "2.0".to_string(),
-                                id,
-                                result: Some(json!({
-                                    "content": [
-                                        {
-                                            "type": "text",
-                                            "text": format!("Successfully converted {} to {}", input, output)
+                        match result {
+                            Ok(info) => {
+                                let output_size = std::fs::metadata(output)
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                McpResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id,
+                                    result: Some(json!({
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": format!("Successfully converted {} to {}", input, output)
+                                            }
+                                        ],
+                                        "details": {
+                                            "pipeline": info.pipeline,
+                                            "output_size_bytes": output_size,
+                                            "width": if info.width > 0 { Some(info.width) } else { None::<u32> },
+                                            "height": if info.height > 0 { Some(info.height) } else { None::<u32> },
+                                            "colors_used": info.colors_used
                                         }
-                                    ]
-                                })),
-                                error: None,
-                            },
-                            Err(e) => McpResponse {
+                                    })),
+                                    error: None,
+                                }
+                            }
+                            Err(msg) => McpResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id,
                                 result: None,
                                 error: Some(McpError {
                                     code: -32000,
-                                    message: format!("Conversion failed: {}", e),
+                                    message: msg,
                                 }),
                             },
                         }
@@ -333,6 +399,47 @@ mod tests {
         assert!(out.exists());
         let text = std::fs::read_to_string(&out).expect("read output");
         assert!(text.contains("<svg"));
+        // Check details field is present
+        let res = r.result.unwrap();
+        assert!(res["details"].is_object());
+        assert_eq!(res["details"]["pipeline"], "legacy");
+        assert!(res["details"]["output_size_bytes"].as_u64().unwrap_or(0) > 0);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_convert_with_preprocess_uses_enhanced_pipeline() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_preprocess_test.svg");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                    "preprocess": true,
+                }),
+            },
+            json!(100),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let text = std::fs::read_to_string(&out).expect("read output");
+        assert!(text.contains("<svg"));
+        // Check enhanced pipeline was used
+        let res = r.result.unwrap();
+        assert_eq!(res["details"]["pipeline"], "enhanced");
+        assert!(res["details"]["width"].is_number());
+        assert!(res["details"]["height"].is_number());
+        assert!(res["details"]["colors_used"].is_number());
         let _ = std::fs::remove_file(&out);
     }
 

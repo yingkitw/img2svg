@@ -9,7 +9,8 @@ src/
 ├── lib.rs                  # Library API with public exports + rustdoc
 ├── image_processor.rs      # Image loading, auto-resize (Lanczos3), median-cut quantization
 ├── vectorizer.rs           # Marching-squares contour tracing, smoothing, RDP, hole detection
-├── svg_generator.rs        # SVG file generation with merged subpaths, alpha, evenodd fill-rule
+├── gradient_detector.rs    # Linear and radial gradient detection for native SVG gradients
+├── svg_generator.rs        # SVG file generation with merged subpaths, alpha, evenodd fill-rule, streaming writers
 ├── preprocessor.rs         # Image preprocessing (LUT bilateral filter, color reduction)
 ├── image_filters.rs        # Image filter re-exports + median/weighted median
 ├── image_filters/          # Per-category filter implementations
@@ -136,6 +137,8 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Subpath merging**: All contours of same color → single `<path>` with `M...Z` subpaths
 - **Evenodd fill-rule**: Applied when holes are present in hierarchical mode
 - **Alpha channel**: Rendered as `fill-opacity`/`stroke-opacity` when alpha < 255
+- **Zero-length segment removal**: Duplicate consecutive formatted coordinates are skipped in path strings
+- **Streaming SVG generation**: `generate_svg_to` writes directly to any `Write` implementor without intermediate strings
 
 ### Enhanced Pipeline Algorithms (merged from vec project)
 - **K-means++ initialization**: Probabilistic centroid selection proportional to distance²
@@ -162,6 +165,8 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Alpha channel support**: `fill-opacity`/`stroke-opacity` emitted for partially transparent colors
 - **Evenodd fill-rule**: `fill-rule="evenodd"` applied when hole subpaths are present
 - **Progress logging**: Stage-by-stage `eprintln!` output during vectorization for large images
+- **Incremental SVG generation**: `generate_enhanced_svg_to` writes directly to `Write` implementors
+- **Zero-length segment removal**: Duplicate formatted coordinates skipped in `create_subpath_string`
 
 ### New Features (merged from vec project)
 - **Batch directory processing**: `img2svg -i dir/ -o out/` converts all supported images
@@ -173,6 +178,9 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **High-boost filter**: Aggressive sharpening via `original + boost*(original - blurred)`
 - **Adaptive tone mapping**: Per-pixel local gamma based on neighborhood mean luminance
 - **Rand 0.10 compatibility**: `rng()` / `random_range()` / `random()` API (was `thread_rng()` / `gen_range()` / `gen()`)
+- **SmartThreshold**: Auto-selects Otsu vs adaptive thresholding based on histogram separability measure
+- **Zero-length segment removal**: Skips duplicate formatted coordinates in SVG path strings
+- **Gradient detection**: `detect_gradient` identifies linear and radial gradients via PCA + linear regression per channel for native SVG gradient rendering
 
 ### Preprocessing Algorithms
 - **LUT Bilateral filter**: Fast edge-preserving smoothing
@@ -214,6 +222,12 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 }
 ```
 
+**Tool: `convert_image_to_svg`**
+- `input_path`, `output_path` (required)
+- `num_colors`, `smooth_level`, `threshold` (optional, legacy pipeline)
+- `preprocess` (optional): When `true`, uses the enhanced Bézier pipeline with preprocessing
+- **Response details**: Includes `pipeline`, `output_size_bytes`, `width`, `height`, `colors_used`
+
 ## Dependencies
 
 - `image` (0.24) — raster image loading (PNG, JPEG, BMP, TIFF, WebP, etc.)
@@ -228,7 +242,7 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 ### Test Dependencies
 - (dev-dependencies only)
 - Test images in `examples/input/`
-- 328 tests total: 169 lib + 137 bin + 6 MCP + 14 integration + 2 doctests
+- 349 tests total: 181 lib + 142 bin + 7 MCP + 17 integration + 2 doctests
 
 ## Performance Characteristics
 
