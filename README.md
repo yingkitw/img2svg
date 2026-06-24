@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-377%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-236%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -55,11 +55,11 @@ See the `examples/` directory for sample conversions demonstrating quality. **`e
 
 | Image | Use case | Suggested flags |
 |-------|----------|-----------------|
-| `logo.png` | Flat brand logo | `-c 8 -s 2` |
-| `line_art.png` | Thin strokes / grid | `-c 4` |
+| `logo.png` | Flat brand logo | `--preset logo` |
+| `line_art.png` | Thin strokes / grid | `--centerline` or `-c 4` |
 | `transparency.png` | RGBA / alpha | default |
-| `icon.png` | 128×128 app icon | `-c 12 -s 2` |
-| `lenna.png` | Photograph | `--preprocess -c 12` |
+| `icon.png` | 128×128 app icon | `--preset icon` |
+| `lenna.png` | Photograph | `--preset photo` |
 
 ### Simple Graphics (8 colors)
 
@@ -235,6 +235,30 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--original` | | false | Legacy pipeline: median-cut, marching squares, RDP, line-segment SVG |
 | `--hierarchical` | | false | Hierarchical decomposition (preserves holes with evenodd fill-rule); **`--original` only** |
 | `--advanced` | `-a` | false | Layered SVG output; **`--original` only** |
+| `--preset` | | — | Tuned bundle: `logo`, `photo`, or `icon` (explicit `-c`/`-s`/`-t`/`-p` override preset) |
+| `--superpixel` | | false | SLIC superpixel segmentation instead of k-means quantization |
+| `--centerline` | | false | Stroke/centerline tracing for line art (stroke-only SVG paths) |
+| `--optimize-corners` | | false | Potrace-style Bézier corner optimization pass |
+| `--logo-mode` | | false | Separate fill regions and outline strokes (auto with `--preset logo`) |
+| `--tune` | | false | Generate HTML parameter comparison grid instead of converting |
+| `--format` | | svg | Output format: `svg`, `eps`, `pdf`, or `ai` (also inferred from `-o` extension) |
+
+**Presets** (explicit flags override preset defaults):
+
+| Preset | Colors | Smooth | Preprocess | Threshold | Best for |
+|--------|--------|--------|------------|-----------|----------|
+| `logo` | 8 | 2 | off | 0.15 | Flat logos, brand marks |
+| `photo` | 12 | 3 | on | 0.15 | Photographs |
+| `icon` | 12 | 2 | off | 0.1 | Small UI icons |
+
+```bash
+img2svg -i logo.png -o logo.svg --preset logo
+img2svg -i photo.jpg -o photo.svg --preset photo
+img2svg -i icon.png -o icon.svg --preset icon
+img2svg -i line_art.png -o line.svg --centerline
+img2svg -i logo.png -o logo.eps --format eps
+img2svg -i photo.jpg -o tune.html --tune
+```
 
 The default enhanced pipeline tunes smoothing and edge-aware quantization internally (`EnhancedOptions`); use **`--original`** if you need direct control via `--threshold`, `--smooth`, and `--hierarchical`.
 

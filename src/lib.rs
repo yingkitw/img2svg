@@ -34,6 +34,14 @@ pub mod edge_detector;
 pub mod enhanced_quantizer;
 /// Enhanced vectorization pipeline: marching squares → Bézier curves.
 pub mod enhanced_vectorizer;
+/// Centerline tracing for line art mode.
+pub mod centerline_tracer;
+/// EPS/PDF/AI vector export.
+pub mod eps_generator;
+/// Logo fill + outline separation.
+pub mod logo_pipeline;
+/// HTML parameter tuning grid generator.
+pub mod tune;
 /// Linear and radial gradient detection for smoother SVG gradient fills.
 pub mod gradient_detector;
 /// Comprehensive image processing filters (noise reduction, edge enhancement,
@@ -65,11 +73,15 @@ pub use gradient_detector::{
     LinearGradient, RadialGradient,
 };
 pub use image_filters::{
-    median_filter, prewitt_edge_detection, roberts_edge_detection, weighted_median_filter,
+    mean_shift_filter, median_filter, prewitt_edge_detection, quantize_from_labels,
+    roberts_edge_detection, slic_superpixels, watershed_segment, weighted_median_filter,
     AdaptiveThreshold, AdaptiveToneMapper, CannyEdgeDetector, ColorOps, ColorTemperature,
     EmbossFilter, GammaCorrection, HighBoostFilter, HistogramEqualizer, LaplacianSharpen,
-    MorphologyKind, MorphologyOp, OtsuThreshold, Saturation, SepiaFilter, SmartThreshold,
-    UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
+    MorphologyKind, MorphologyOp, NonLocalMeans, OtsuThreshold, PeronaMalik, Saturation,
+    SepiaFilter, SmartThreshold, UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
+};
+pub use eps_generator::{
+    write_enhanced_ai, write_enhanced_eps, write_enhanced_pdf, write_vectorized_eps,
 };
 /// Re-export image loading and quantization functions.
 pub use image_processor::{

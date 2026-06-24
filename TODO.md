@@ -20,8 +20,8 @@
 - [x] Unit tests for image_processor (13 tests)
 - [x] Unit tests for vectorizer (35 tests)
 - [x] Unit tests for svg_generator (20 tests)
-- [x] Integration tests (21 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency)
-- [x] CLI unit tests: `is_supported_image` extension checks (3 tests, `src/cli.rs`)
+- [x] Integration tests (25 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS**
+- [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides (8 tests, `src/cli.rs`)
 - [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (6 tests, `src/mcp.rs`)
 - [x] Library API tests (1 test)
 - [x] Run `cargo test` for full counts (lib + binary targets + `img2svg-mcp` + integration + doctests)
@@ -64,6 +64,7 @@
 - [x] Adaptive simplification tolerance (2x for photos, 1.5 for graphics)
 - [x] Visual comparison page with lenna.png, 6 test images total
 - [x] Use-case example images: logo, line_art, transparency, icon (10 images in `examples/input/`)
+- [x] CLI `--preset logo|photo|icon` with tuned defaults and override semantics
 - [x] Control point clamping to image bounds (fixes corner bulging in medium.png)
 - [x] Auto-preprocessing for photos in enhanced pipeline (bilateral filter + color reduction)
 - [x] Image corner injection: detect edge transitions after snapping, insert 90° corner points
@@ -93,71 +94,20 @@
 - [x] SVG gradient detection module (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
 - [x] Support for animated GIF input (frame-by-frame conversion to numbered SVGs)
 - [x] Support for CMYK color space input (`cmyk_to_rgb`, `detect_color_space`, `ColorSpace`)
+- [x] Superpixel segmentation as alternative to color quantization (`--superpixel`, SLIC + `quantize_superpixel`)
+- [x] Interactive parameter tuning with HTML preview grid (`--tune`, `tune::generate_tune_html`)
+- [x] Export to other vector formats (`--format eps|pdf|ai`, `eps_generator` module)
+- [x] Non-local means (NLM) denoising (`NonLocalMeans` in `image_filters/denoising.rs`)
+- [x] Anisotropic diffusion (Perona-Malik) (`PeronaMalik` in `image_filters/denoising.rs`)
+- [x] Watershed segmentation (`watershed_segment` in `image_filters/segmentation.rs`)
+- [x] Mean shift segmentation (`mean_shift_filter`, SLIC superpixels in `image_filters/segmentation.rs`)
+- [x] Corner optimization / curve optimization pass (`--optimize-corners`, `optimize_bezier_corners`)
+- [x] Centerline tracing mode for line art (`--centerline`, `centerline_tracer`)
+- [x] Multi-pass outline + fill separation for logos (`--logo-mode`, `logo_pipeline`)
 
 ## Pending 🚧
 
-### Performance
-- [x] Streaming SVG generation for extremely large outputs — enhanced pipeline (`generate_enhanced_svg_to` now uses fully zero-allocation `bezier_to_svg_path_to`, no `ColorGroup` collection)
-
-### MCP Server
-- [x] Add streaming file reading for large images (`max_size` parameter with auto-resize)
-- [x] Real-time progress notifications (`notifications/progress`) during conversion with `progress_token`
-
-### Documentation
-- [x] More example images demonstrating different use cases (logo, line_art, transparency, icon + docs/comparison page)
-- [x] Performance benchmarks comparing original vs enhanced pipeline (`cargo bench --bench pipeline_comparison`, documented in README)
-
-### Advanced Features
-- [ ] Superpixel segmentation as alternative to color quantization
-- [ ] Interactive mode for parameter tuning with live preview
-- [ ] Export to other vector formats (PDF, EPS, AI)
-
-### Image Processing Algorithms 🆕
-
-#### Noise Reduction
-- [ ] Non-local means (NLM) denoising
-- [ ] Anisotropic diffusion (Perona-Malik)
-- [x] Median filter for salt-and-pepper noise
-- [x] Weighted median filter
-
-#### Edge Detection & Enhancement
-- [x] Canny edge detector (non-max suppression + hysteresis)
-- [x] Prewitt edge detector
-- [x] Roberts cross-gradient operator
-- [x] Unsharp masking for sharpening
-- [x] Laplacian sharpening
-- [x] High-boost filtering
-
-#### Contrast & Tone Mapping
-- [x] Histogram equalization
-- [x] CLAHE (Contrast Limited Adaptive Histogram Equalization)
-- [x] Gamma correction
-- [x] Adaptive tone mapping
-
-#### Thresholding & Segmentation
-- [x] Otsu thresholding
-- [x] Adaptive thresholding
-- [ ] Watershed segmentation
-- [ ] Mean shift segmentation
-
-#### Morphological Operations
-- [x] Erosion and dilation
-- [x] Opening and closing
-- [x] Top-hat and bottom-hat transforms
-- [x] Morphological gradient
-
-#### Color Operations
-- [x] Color temperature adjustment
-- [x] Saturation enhancement
-- [x] Color balance
-- [x] Hue/Saturation/Lightness (HSL) conversion
-- [x] LAB color space conversion
-
-#### Special Effects
-- [x] Emboss effect
-- [x] Edge glow effect
-- [x] Vintage/sepia filter
-- [x] Vignette effect
+*(none — all planned items implemented)*
 
 ## Maybe / Future Considerations 💭
 
@@ -170,7 +120,7 @@
 - [ ] Vector-to-raster comparison tools
 
 ### Competitive gaps (from Potrace, vtracer, Inkscape trace)
-- [ ] Corner optimization / curve optimization pass (Potrace-style)
-- [ ] Centerline tracing mode for line art (vtracer)
-- [ ] Multi-pass outline + fill separation for logos
-- [ ] CLI `--preset logo|photo|icon` with tuned defaults
+- [x] Corner optimization / curve optimization pass (Potrace-style)
+- [x] Centerline tracing mode for line art (vtracer)
+- [x] Multi-pass outline + fill separation for logos
+- [x] CLI `--preset logo|photo|icon` with tuned defaults

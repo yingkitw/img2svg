@@ -8,20 +8,88 @@ mod enhanced_quantizer;
 mod region_extractor;
 mod path_simplifier;
 mod bezier_fitter;
+mod image_filters;
 mod enhanced_vectorizer;
+mod centerline_tracer;
+mod logo_pipeline;
+mod eps_generator;
+mod tune;
 
 use anyhow::Result;
-use clap::Parser;
-use cli::{Cli, is_supported_image};
+use cli::{enhanced_preprocess, parse_args, is_supported_image, Cli, OutputFormat};
+use eps_generator::{write_enhanced_ai, write_enhanced_eps, write_enhanced_pdf, write_vectorized_eps};
 use preprocessor::{preprocess, PreprocessOptions};
-use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions};
-use std::path::Path;
+use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions, EnhancedVectorData};
+use std::path::{Path, PathBuf};
 
 fn is_gif(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("gif"))
         .unwrap_or(false)
+}
+
+fn enhanced_options(cli: &Cli) -> EnhancedOptions {
+    EnhancedOptions {
+        num_colors: cli.colors,
+        preprocess: enhanced_preprocess(cli),
+        use_superpixel: cli.superpixel,
+        centerline: cli.centerline,
+        optimize_corners: cli.optimize_corners,
+        logo_mode: cli.logo_mode,
+        ..Default::default()
+    }
+}
+
+fn output_extension(format: OutputFormat) -> &'static str {
+    match format {
+        OutputFormat::Svg => "svg",
+        OutputFormat::Eps => "eps",
+        OutputFormat::Pdf => "pdf",
+        OutputFormat::Ai => "ai",
+    }
+}
+
+fn default_output_path(input: &Path, format: OutputFormat) -> PathBuf {
+    let mut path = input.to_path_buf();
+    path.set_extension(output_extension(format));
+    path
+}
+
+fn output_format(cli: &Cli, output_path: &Path) -> OutputFormat {
+    if cli.format != OutputFormat::Svg {
+        cli.format
+    } else {
+        OutputFormat::from_path(output_path)
+    }
+}
+
+fn write_enhanced_output(data: &EnhancedVectorData, path: &Path, format: OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Svg => write_enhanced_svg(data, path),
+        OutputFormat::Eps => write_enhanced_eps(data, path),
+        OutputFormat::Pdf => write_enhanced_pdf(data, path),
+        OutputFormat::Ai => write_enhanced_ai(data, path),
+    }
+}
+
+fn write_original_output(
+    vectorized: &vectorizer::VectorizedData,
+    path: &Path,
+    format: OutputFormat,
+    advanced: bool,
+) -> Result<()> {
+    match format {
+        OutputFormat::Svg if advanced => svg_generator::generate_svg_advanced(vectorized, path),
+        OutputFormat::Svg => svg_generator::generate_svg(vectorized, path),
+        OutputFormat::Eps => write_vectorized_eps(vectorized, path),
+        OutputFormat::Pdf | OutputFormat::Ai => {
+            let tmp = path.with_extension("svg");
+            svg_generator::generate_svg(vectorized, &tmp)?;
+            eprintln!("  Note: PDF/AI from original pipeline writes SVG to {}", tmp.display());
+            Ok(())
+        }
+    }
 }
 
 /// Process an animated GIF file, outputting numbered SVG frames.
@@ -67,13 +135,9 @@ fn process_animated_gif(
                 svg_generator::generate_svg(&vectorized_data, &out_path)?;
             }
         } else {
-            let options = EnhancedOptions {
-                num_colors: cli.colors,
-                preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
-                ..Default::default()
-            };
+            let options = enhanced_options(cli);
             let vector_data = vectorize_enhanced(&image_data, &options)?;
-            write_enhanced_svg(&vector_data, &out_path)?;
+            write_enhanced_output(&vector_data, &out_path, output_format(cli, &out_path))?;
         }
 
         eprintln!("  Frame {}/{} -> {}", i + 1, total, out_path.display());
@@ -123,20 +187,16 @@ fn process_file(
 
         eprintln!("  Generating SVG...");
         if cli.advanced {
-            svg_generator::generate_svg_advanced(&vectorized_data, output_path)?;
+            write_original_output(&vectorized_data, output_path, output_format(cli, output_path), true)?;
         } else {
-            svg_generator::generate_svg(&vectorized_data, output_path)?;
+            write_original_output(&vectorized_data, output_path, output_format(cli, output_path), false)?;
         }
     } else {
-        let options = EnhancedOptions {
-            num_colors: cli.colors,
-            preprocess: cli.preprocess || EnhancedOptions::default().preprocess,
-            ..Default::default()
-        };
+        let options = enhanced_options(cli);
         eprintln!("  Vectorizing with enhanced pipeline...");
         let vector_data = vectorize_enhanced(&image_data, &options)?;
-        eprintln!("  Generating SVG...");
-        write_enhanced_svg(&vector_data, output_path)?;
+        eprintln!("  Generating output...");
+        write_enhanced_output(&vector_data, output_path, output_format(cli, output_path))?;
         eprintln!(
             "  {} paths, background #{:02x}{:02x}{:02x}",
             vector_data.paths.len(),
@@ -150,7 +210,22 @@ fn process_file(
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = parse_args(std::env::args());
+
+    if cli.tune {
+        let output_path = cli.output.clone().unwrap_or_else(|| {
+            let mut p = cli.input.clone();
+            p.set_extension("html");
+            if p.extension().is_none() {
+                p = PathBuf::from("tune.html");
+            }
+            p
+        });
+        eprintln!("Generating tune HTML at {}...", output_path.display());
+        tune::generate_tune_html(&cli.input, &output_path)?;
+        println!("Tune page written to {}", output_path.display());
+        return Ok(());
+    }
 
     if cli.input.is_dir() {
         // Batch mode: process all supported images in directory
@@ -173,7 +248,7 @@ fn main() -> Result<()> {
             let path = entry.path();
             let stem = path.file_stem().unwrap().to_string_lossy();
             let mut out_path = output_dir.join(stem.as_ref());
-            out_path.set_extension("svg");
+            out_path.set_extension(output_extension(cli.format));
 
             eprintln!("[{}/{}] {} -> {}", count + errors + 1, total, path.display(), out_path.display());
             let result = if is_gif(&path) {
@@ -193,11 +268,7 @@ fn main() -> Result<()> {
         println!("Batch complete: {} converted, {} errors.", count, errors);
     } else {
         // Single file mode
-        let output_path = cli.output.clone().unwrap_or_else(|| {
-            let mut path = cli.input.clone();
-            path.set_extension("svg");
-            path
-        });
+        let output_path = cli.output.clone().unwrap_or_else(|| default_output_path(&cli.input, cli.format));
 
         println!("Converting {} to {}...", cli.input.display(), output_path.display());
 

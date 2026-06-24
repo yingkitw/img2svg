@@ -5,7 +5,7 @@
 ```
 src/
 ├── main.rs                 # CLI entry point, single-file + batch mode orchestration
-├── cli.rs                  # Clap-based argument parsing, is_supported_image()
+├── cli.rs                  # Clap argument parsing, presets, is_supported_image()
 ├── lib.rs                  # Library API with public exports + rustdoc
 ├── image_processor.rs      # Image loading, auto-resize (Lanczos3), median-cut quantization
 ├── vectorizer.rs           # Marching-squares contour tracing, smoothing, RDP, hole detection

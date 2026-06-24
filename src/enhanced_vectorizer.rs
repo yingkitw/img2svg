@@ -7,9 +7,11 @@
 //!
 //! The original marching-squares pipeline is preserved in vectorizer.rs for comparison.
 
-use crate::bezier_fitter::{bezier_to_svg_path_to, BezierCurve, BezierFitter};
+use crate::bezier_fitter::{bezier_to_svg_path_to, optimize_bezier_corners, BezierCurve, BezierFitter};
 use crate::edge_detector::detect_edges_sobel;
-use crate::enhanced_quantizer::{adaptive_color_count, count_distinct_colors, quantize_edge_aware};
+use crate::enhanced_quantizer::{
+    adaptive_color_count, count_distinct_colors, quantize_edge_aware, quantize_superpixel,
+};
 use crate::image_processor::ImageData;
 use crate::path_simplifier::{detect_corners, smooth_with_corners, visvalingam_whyatt};
 use crate::preprocessor::{preprocess, PreprocessOptions};
@@ -43,6 +45,14 @@ pub struct EnhancedOptions {
     pub preprocess: bool,
     /// Whether to recolor from original image
     pub recolor: bool,
+    /// Use SLIC superpixel quantization instead of k-means
+    pub use_superpixel: bool,
+    /// Centerline/stroke tracing for line art (open paths)
+    pub centerline: bool,
+    /// Potrace-style corner optimization on Bézier control points
+    pub optimize_corners: bool,
+    /// Separate fill and outline layers for logos
+    pub logo_mode: bool,
 }
 
 impl Default for EnhancedOptions {
@@ -58,6 +68,10 @@ impl Default for EnhancedOptions {
             smooth_window: 3,
             preprocess: true,
             recolor: true,
+            use_superpixel: false,
+            centerline: false,
+            optimize_corners: false,
+            logo_mode: false,
         }
     }
 }
@@ -78,6 +92,8 @@ pub struct EnhancedPath {
     pub area: usize,
     /// Pre-built SVG path data for thin stripe rects (bypasses bezier_to_svg_path).
     pub svg_override: Option<String>,
+    /// Stroke-only path (centerline / logo outline)
+    pub stroke_only: bool,
 }
 
 /// Run the enhanced vectorization pipeline.
@@ -89,6 +105,10 @@ pub fn vectorize_enhanced(
     image_data: &ImageData,
     options: &EnhancedOptions,
 ) -> Result<EnhancedVectorData> {
+    if options.centerline {
+        return vectorize_centerline(image_data, options);
+    }
+
     let width = image_data.width as usize;
     let height = image_data.height as usize;
     let pixel_count = width * height;
@@ -132,13 +152,17 @@ pub fn vectorize_enhanced(
     } else {
         options.smoothing_passes
     };
-    let (quantized, _indices, _palette) = quantize_edge_aware(
-        &preprocessed,
-        target_colors,
-        &edges,
-        options.edge_threshold,
-        smooth_passes,
-    );
+    let (quantized, _indices, _palette) = if options.use_superpixel {
+        quantize_superpixel(&preprocessed, target_colors)
+    } else {
+        quantize_edge_aware(
+            &preprocessed,
+            target_colors,
+            &edges,
+            options.edge_threshold,
+            smooth_passes,
+        )
+    };
 
     // Group pixels by quantized color for region assignment
     let mut color_pixels: HashMap<(u8, u8, u8, u8), Vec<(usize, usize)>> = HashMap::new();
@@ -210,7 +234,7 @@ pub fn vectorize_enhanced(
 
     // For each color: build binary mask → marching squares → smooth → simplify → Bézier fit
     // Collect (display_color, pixel_count, contours) tuples for parallel processing
-    let color_contours: Vec<((u8, u8, u8, u8), usize, Vec<Vec<Point>>)> = color_list
+    let color_contours: Vec<((u8, u8, u8, u8), usize, Vec<bool>, Vec<Vec<Point>>)> = color_list
         .iter()
         .filter(|(color, _)| *color != bg_quantized)
         .map(|(color, pixels)| {
@@ -221,14 +245,14 @@ pub fn vectorize_enhanced(
             let contours = marching_squares_contours(&mask, width, height);
             // Use recolored color for display if available
             let display_color = recolor_map.get(color).copied().unwrap_or(*color);
-            (display_color, pixels.len(), contours)
+            (display_color, pixels.len(), mask, contours)
         })
         .collect();
 
     // Parallel: for each contour, smooth → simplify → Bézier fit
     let mut enhanced_paths: Vec<EnhancedPath> = color_contours
         .par_iter()
-        .flat_map(|(color, pixel_count, contours)| {
+        .flat_map(|(color, pixel_count, mask, contours)| {
             let mut paths = Vec::new();
 
             for contour in contours {
@@ -264,6 +288,7 @@ pub fn vectorize_enhanced(
                         color: *color,
                         area: *pixel_count,
                         svg_override: Some(svg),
+                        stroke_only: false,
                     });
                     continue;
                 }
@@ -319,6 +344,10 @@ pub fn vectorize_enhanced(
                 // Cubic Bézier fitting with internal corner detection (enhanced)
                 let mut curves = fitter.fit_path(&snapped, true);
 
+                if options.optimize_corners {
+                    optimize_bezier_corners(&mut curves);
+                }
+
                 // Clamp control points to image bounds (prevents bulging corners)
                 for curve in &mut curves {
                     curve.control1.x = curve.control1.x.clamp(0.0, w_f);
@@ -333,7 +362,32 @@ pub fn vectorize_enhanced(
                         color: *color,
                         area: *pixel_count,
                         svg_override: None,
+                        stroke_only: false,
                     });
+                }
+
+                if options.logo_mode {
+                    let ring = crate::logo_pipeline::outline_mask(&mask, width, height);
+                    let outline_contours = marching_squares_contours(&ring, width, height);
+                    let ocolor = crate::logo_pipeline::outline_color(*color);
+                    for outline in outline_contours {
+                        if outline.len() < 3 {
+                            continue;
+                        }
+                        let mut ocurves = fitter.fit_path(&outline, true);
+                        if options.optimize_corners {
+                            optimize_bezier_corners(&mut ocurves);
+                        }
+                        if !ocurves.is_empty() {
+                            paths.push(EnhancedPath {
+                                curves: ocurves,
+                                color: ocolor,
+                                area: outline.len(),
+                                svg_override: None,
+                                stroke_only: true,
+                            });
+                        }
+                    }
                 }
             }
 
@@ -350,6 +404,50 @@ pub fn vectorize_enhanced(
         height: image_data.height,
         background_color,
         paths: enhanced_paths,
+    })
+}
+
+fn vectorize_centerline(
+    image_data: &ImageData,
+    options: &EnhancedOptions,
+) -> Result<EnhancedVectorData> {
+    let width = image_data.width as usize;
+    let height = image_data.height as usize;
+    let mut mask = vec![false; width * height];
+    for (i, p) in image_data.pixels.iter().enumerate() {
+        let g = 0.299 * p.r as f64 + 0.587 * p.g as f64 + 0.114 * p.b as f64;
+        mask[i] = g < 128.0;
+    }
+
+    let polylines = crate::centerline_tracer::trace_centerlines(&mask, width, height);
+    let fitter = BezierFitter::new(options.curve_tolerance);
+    let bg = detect_background_color(image_data);
+    let mut paths = Vec::new();
+
+    for poly in polylines {
+        if poly.len() < 2 {
+            continue;
+        }
+        let mut curves = fitter.fit_path(&poly, false);
+        if options.optimize_corners {
+            optimize_bezier_corners(&mut curves);
+        }
+        if !curves.is_empty() {
+            paths.push(EnhancedPath {
+                curves,
+                color: (0, 0, 0, 255),
+                area: poly.len(),
+                svg_override: None,
+                stroke_only: true,
+            });
+        }
+    }
+
+    Ok(EnhancedVectorData {
+        width: image_data.width,
+        height: image_data.height,
+        background_color: bg,
+        paths,
     })
 }
 
@@ -499,6 +597,29 @@ pub fn generate_enhanced_svg_to<W: Write>(
     let mut has_data = false;
 
     for path in &data.paths {
+        if path.stroke_only {
+            let color = path.color;
+            let hex = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
+            let opacity_attr = if color.3 < 255 {
+                let op = (color.3 as f64 / 255.0 * 100.0).round() / 100.0;
+                format!(" stroke-opacity=\"{}\"", op)
+            } else {
+                String::new()
+            };
+            write!(
+                writer,
+                r#"  <path fill="none" stroke="{}" stroke-width="1" stroke-linejoin="round"{} d=""#,
+                hex, opacity_attr
+            )?;
+            if let Some(ref svg) = path.svg_override {
+                writer.write_all(svg.as_bytes())?;
+            } else {
+                bezier_to_svg_path_to(writer, &path.curves, false)?;
+            }
+            writeln!(writer, r#""/>"#)?;
+            continue;
+        }
+
         let path_color = path.color;
 
         if current_color != Some(path_color) {
@@ -870,6 +991,7 @@ mod tests {
                 color: (255, 0, 0, 128),
                 area: 100,
                 svg_override: None,
+                stroke_only: false,
             },
         ];
         let data = EnhancedVectorData {
@@ -895,6 +1017,7 @@ mod tests {
                 color: (255, 0, 0, 128),
                 area: 100,
                 svg_override: None,
+                stroke_only: false,
             },
             EnhancedPath {
                 curves: vec![BezierCurve {
@@ -906,6 +1029,7 @@ mod tests {
                 color: (0, 255, 0, 255),
                 area: 50,
                 svg_override: None,
+                stroke_only: false,
             },
         ];
         let data = EnhancedVectorData {
@@ -936,6 +1060,7 @@ mod tests {
                 color: (255, 0, 0, 255),
                 area: 100,
                 svg_override: None,
+                stroke_only: false,
             },
             EnhancedPath {
                 curves: vec![BezierCurve {
@@ -947,6 +1072,7 @@ mod tests {
                 color: (255, 0, 0, 255), // same color
                 area: 50,
                 svg_override: None,
+                stroke_only: false,
             },
             EnhancedPath {
                 curves: vec![BezierCurve {
@@ -958,6 +1084,7 @@ mod tests {
                 color: (0, 0, 255, 255), // different color
                 area: 80,
                 svg_override: None,
+                stroke_only: false,
             },
         ];
         let groups = group_by_color(&paths);

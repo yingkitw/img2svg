@@ -9,17 +9,23 @@ use crate::image_processor::ImageData;
 pub use self::canny::CannyEdgeDetector;
 pub use self::color_ops::{ColorOps, ColorTemperature, Saturation, HSL, LAB};
 pub use self::contrast::{AdaptiveToneMapper, HistogramEqualizer, CLAHE};
+pub use self::denoising::{NonLocalMeans, PeronaMalik};
 pub use self::effects::{EdgeGlowFilter, EmbossFilter, SepiaFilter, VignetteFilter, VintageFilter};
 pub use self::enhancement::{GammaCorrection, HighBoostFilter, LaplacianSharpen, UnsharpMask};
 pub use self::morphology::{MorphologyKind, MorphologyOp};
+pub use self::segmentation::{
+    mean_shift_filter, quantize_from_labels, slic_superpixels, watershed_segment,
+};
 pub use self::thresholding::{AdaptiveThreshold, OtsuThreshold, SmartThreshold};
 
 mod canny;
 mod color_ops;
 mod contrast;
+mod denoising;
 mod effects;
 mod enhancement;
 mod morphology;
+mod segmentation;
 mod thresholding;
 
 /// Apply median filter for salt-and-pepper noise reduction

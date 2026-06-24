@@ -16,9 +16,16 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--original`: Use original pipeline (line segments, RDP simplification)
   - `--hierarchical`: Enable hierarchical decomposition (original pipeline only)
   - `--advanced` / `-a`: Use advanced SVG generation (original pipeline only)
+  - `--preset`: Tuned parameter bundle — `logo`, `photo`, or `icon` (explicit `-c`/`-s`/`-t`/`-p` override preset values)
+  - `--superpixel`: SLIC superpixel segmentation instead of k-means quantization
+  - `--centerline`: Centerline/stroke tracing for line art
+  - `--optimize-corners`: Potrace-style Bézier corner optimization
+  - `--logo-mode`: Separate fill regions and outline strokes (auto-enabled for `--preset logo`)
+  - `--tune`: Generate HTML parameter comparison grid
+  - `--format`: Output format — `svg`, `eps`, `pdf`, or `ai` (default `svg`; inferred from `-o` extension)
 
 ## Output
-- SVG file with filled `<path>` elements representing color regions
+- Vector file: SVG (default), EPS, minimal PDF, or Illustrator-compatible AI wrapper
 - Background color auto-detected and rendered as `<rect>`
 - One `<path>` per non-background color, using merged subpaths
 - ViewBox and dimensions match input image

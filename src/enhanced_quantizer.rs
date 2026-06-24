@@ -247,6 +247,36 @@ pub fn quantize_edge_aware(
     (quantized, indices, palette)
 }
 
+/// Superpixel-based quantization using SLIC clustering.
+pub fn quantize_superpixel(
+    image_data: &ImageData,
+    num_superpixels: usize,
+) -> (ImageData, Vec<usize>, Vec<RGBA8>) {
+    use crate::image_filters::{quantize_from_labels, slic_superpixels};
+    use std::collections::HashMap;
+
+    let labels = slic_superpixels(image_data, num_superpixels, 5);
+    let quantized = quantize_from_labels(image_data, &labels);
+
+    let mut palette_map: HashMap<u32, usize> = HashMap::new();
+    let mut indices = vec![0usize; labels.len()];
+    let mut palette: Vec<RGBA8> = Vec::new();
+
+    for (i, &lab) in labels.iter().enumerate() {
+        let c = quantized.pixels[i];
+        if let Some(&idx) = palette_map.get(&lab) {
+            indices[i] = idx;
+        } else {
+            let idx = palette.len();
+            palette.push(c);
+            palette_map.insert(lab, idx);
+            indices[i] = idx;
+        }
+    }
+
+    (quantized, indices, palette)
+}
+
 /// Count distinct colors in an image.
 pub fn count_distinct_colors(image_data: &ImageData) -> usize {
     use std::collections::HashSet;

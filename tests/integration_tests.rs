@@ -1,7 +1,7 @@
 // Integration tests for img2svg
 use img2svg::{
-    convert, convert_to_svg_string, generate_enhanced_svg, vectorize_enhanced, write_enhanced_svg,
-    ConversionOptions, EnhancedOptions,
+    convert, convert_to_svg_string, generate_enhanced_svg, vectorize_enhanced, write_enhanced_eps,
+    write_enhanced_svg, ConversionOptions, EnhancedOptions,
 };
 use img2svg::image_processor::{load_image, quantize_colors};
 use img2svg::svg_generator::{generate_svg, generate_svg_advanced};
@@ -511,4 +511,76 @@ fn test_use_case_transparency_preserves_fill_opacity() {
         svg.contains("fill-opacity") || svg.contains("stroke-opacity"),
         "SVG should preserve alpha as opacity attributes"
     );
+}
+
+#[test]
+fn test_enhanced_superpixel_mode() {
+    let test_img = PathBuf::from("/tmp/test_superpixel.png");
+    create_test_png(&test_img, 40, 40, "checkerboard");
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        use_superpixel: true,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("superpixel vectorize");
+    assert!(!data.paths.is_empty());
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_enhanced_centerline_mode() {
+    let input = PathBuf::from("examples/input/line_art.png");
+    if !input.exists() {
+        return;
+    }
+    let image_data = load_image(&input).expect("load line art");
+    let opts = EnhancedOptions {
+        num_colors: 4,
+        centerline: true,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("centerline vectorize");
+    assert!(
+        data.paths.iter().any(|p| p.stroke_only),
+        "centerline mode should emit stroke-only paths"
+    );
+}
+
+#[test]
+fn test_enhanced_logo_mode() {
+    let input = PathBuf::from("examples/input/logo.png");
+    if !input.exists() {
+        return;
+    }
+    let image_data = load_image(&input).expect("load logo");
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        logo_mode: true,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("logo mode vectorize");
+    assert!(!data.paths.is_empty());
+}
+
+#[test]
+fn test_enhanced_eps_export() {
+    let test_img = PathBuf::from("/tmp/test_eps.png");
+    let test_eps = PathBuf::from("/tmp/test_eps_output.eps");
+    create_test_png(&test_img, 30, 30, "circle");
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("vectorize");
+    write_enhanced_eps(&data, &test_eps).expect("write eps");
+    let eps = fs::read_to_string(&test_eps).expect("read eps");
+    assert!(eps.contains("%!PS-Adobe"));
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_eps);
 }

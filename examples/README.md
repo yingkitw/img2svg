@@ -110,7 +110,7 @@ This directory contains test images of varying complexity to validate the img2sv
 
 **Recommended command**:
 ```bash
-img2svg -i examples/input/logo.png -o examples/output/logo.svg -c 8 -s 2
+img2svg -i examples/input/logo.png -o examples/output/logo.svg --preset logo
 ```
 
 

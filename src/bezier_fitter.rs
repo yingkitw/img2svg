@@ -713,6 +713,24 @@ fn fmt_num(v: f64) -> String {
     }
 }
 
+/// Potrace-style corner optimization: collinearize nearly-linear cubics at sharp joins.
+pub fn optimize_bezier_corners(curves: &mut [BezierCurve]) {
+    for curve in curves.iter_mut() {
+        if is_linear_curve(curve) {
+            let t1 = 1.0 / 3.0;
+            let t2 = 2.0 / 3.0;
+            curve.control1 = Point {
+                x: curve.start.x + t1 * (curve.end.x - curve.start.x),
+                y: curve.start.y + t1 * (curve.end.y - curve.start.y),
+            };
+            curve.control2 = Point {
+                x: curve.start.x + t2 * (curve.end.x - curve.start.x),
+                y: curve.start.y + t2 * (curve.end.y - curve.start.y),
+            };
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
