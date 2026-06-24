@@ -20,7 +20,7 @@
 - [x] Unit tests for image_processor (13 tests)
 - [x] Unit tests for vectorizer (35 tests)
 - [x] Unit tests for svg_generator (20 tests)
-- [x] Integration tests (29 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS**
+- [x] Integration tests (30 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS**
 - [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides (8 tests, `src/cli.rs`)
 - [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (14 tests, `src/mcp.rs`)
 - [x] MCP enhanced pipeline as default; `legacy`, `preset`, mode flags, and `output_format` parameters
@@ -108,6 +108,7 @@
 - [x] Centerline tracing mode for line art (`--centerline`, `centerline_tracer`)
 - [x] Batch MCP tool for directory conversion (`convert_image_directory`, `batch_convert_enhanced`)
 - [x] Despeckle / speckle suppression (`despeckle.rs`, `--min-region-area`, `--no-despeckle`)
+- [x] Spline optimization / curve merging pass (`optimize_bezier_curves`, `--optimize-curves`)
 
 ## Pending 🚧
 
@@ -123,9 +124,7 @@
 - [ ] Layer-aware vectorization for Photoshop files
 - [ ] Vector-to-raster comparison tools
 - [ ] Multi-color hierarchical SVG layers (Inkscape-style grouped paths per color)
-- [x] Despeckle / speckle suppression pass (Potrace `-t`, `despeckle.rs`, `--min-region-area` / `--no-despeckle`)
 - [ ] Optical character recognition (OCR) text preservation in logos (vtracer)
-- [ ] Spline optimization / curve merging pass (Potrace `-O`)
 
 ### Competitive gaps (from Potrace, vtracer, Inkscape trace)
 - [x] Corner optimization / curve optimization pass (Potrace-style)

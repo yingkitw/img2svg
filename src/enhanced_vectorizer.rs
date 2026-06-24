@@ -7,7 +7,7 @@
 //!
 //! The original marching-squares pipeline is preserved in vectorizer.rs for comparison.
 
-use crate::bezier_fitter::{bezier_to_svg_path_to, optimize_bezier_corners, BezierCurve, BezierFitter};
+use crate::bezier_fitter::{bezier_to_svg_path_to, optimize_bezier_corners, optimize_bezier_curves, BezierCurve, BezierFitter};
 use crate::despeckle::despeckle;
 use crate::edge_detector::detect_edges_sobel;
 use crate::enhanced_quantizer::{
@@ -52,6 +52,8 @@ pub struct EnhancedOptions {
     pub centerline: bool,
     /// Potrace-style corner optimization on Bézier control points
     pub optimize_corners: bool,
+    /// Potrace `-O` style merge of consecutive nearly-linear curve segments
+    pub optimize_curves: bool,
     /// Separate fill and outline layers for logos
     pub logo_mode: bool,
 }
@@ -72,6 +74,7 @@ impl Default for EnhancedOptions {
             use_superpixel: false,
             centerline: false,
             optimize_corners: false,
+            optimize_curves: false,
             logo_mode: false,
         }
     }
@@ -356,6 +359,9 @@ pub fn vectorize_enhanced(
                 if options.optimize_corners {
                     optimize_bezier_corners(&mut curves);
                 }
+                if options.optimize_curves {
+                    optimize_bezier_curves(&mut curves);
+                }
 
                 // Clamp control points to image bounds (prevents bulging corners)
                 for curve in &mut curves {
@@ -386,6 +392,9 @@ pub fn vectorize_enhanced(
                         let mut ocurves = fitter.fit_path(&outline, true);
                         if options.optimize_corners {
                             optimize_bezier_corners(&mut ocurves);
+                        }
+                        if options.optimize_curves {
+                            optimize_bezier_curves(&mut ocurves);
                         }
                         if !ocurves.is_empty() {
                             paths.push(EnhancedPath {
@@ -440,6 +449,9 @@ fn vectorize_centerline(
         let mut curves = fitter.fit_path(&poly, false);
         if options.optimize_corners {
             optimize_bezier_corners(&mut curves);
+        }
+        if options.optimize_curves {
+            optimize_bezier_curves(&mut curves);
         }
         if !curves.is_empty() {
             paths.push(EnhancedPath {

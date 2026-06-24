@@ -20,6 +20,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--superpixel`: SLIC superpixel segmentation instead of k-means quantization
   - `--centerline`: Centerline/stroke tracing for line art
   - `--optimize-corners`: Potrace-style Bézier corner optimization
+  - `--optimize-curves`: Potrace `-O` style merge of nearly-linear curve segments
   - `--logo-mode`: Separate fill regions and outline strokes (auto-enabled for `--preset logo`)
   - `--min-region-area`: Despeckle threshold in pixels (default 20; Potrace turdsize equivalent)
   - `--no-despeckle`: Disable despeckle pass
@@ -90,7 +91,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 258 tests passing (207 lib + 204 bin + 14 MCP + 29 integration + 3 doctests)
+- ✅ 261 tests passing (209 lib + 204 bin + 14 MCP + 30 integration + 3 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -208,6 +209,7 @@ Recommended: img2svg -i lenna.png -o lenna.svg --preprocess -c 12
 - `convert_enhanced` / `convert_enhanced_to_svg_string` / `convert_enhanced_data`
 - `batch_convert_enhanced` / `is_supported_image`
 - `despeckle` / `min_region_area` on `EnhancedOptions`
+- `optimize_bezier_corners` / `optimize_bezier_curves`
 - `write_enhanced_output` / `EnhancedOutputFormat`
 - Gradient detection (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
 - Animated GIF loading (`load_animated_gif`, `GifFrame`) and per-frame SVG conversion (`convert_animated_gif`)

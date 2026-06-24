@@ -37,6 +37,7 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         use_superpixel: cli.superpixel,
         centerline: cli.centerline,
         optimize_corners: cli.optimize_corners,
+        optimize_curves: cli.optimize_curves,
         logo_mode: cli.logo_mode,
         min_region_area: if cli.no_despeckle {
             0

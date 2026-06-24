@@ -731,6 +731,75 @@ pub fn optimize_bezier_corners(curves: &mut [BezierCurve]) {
     }
 }
 
+fn point_dist(a: &Point, b: &Point) -> f64 {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn merge_linear_curves(a: &BezierCurve, b: &BezierCurve) -> BezierCurve {
+    let t1 = 1.0 / 3.0;
+    let t2 = 2.0 / 3.0;
+    BezierCurve {
+        start: a.start.clone(),
+        control1: Point {
+            x: a.start.x + t1 * (b.end.x - a.start.x),
+            y: a.start.y + t1 * (b.end.y - a.start.y),
+        },
+        control2: Point {
+            x: a.start.x + t2 * (b.end.x - a.start.x),
+            y: a.start.y + t2 * (b.end.y - a.start.y),
+        },
+        end: b.end.clone(),
+    }
+}
+
+/// Potrace `-O` style spline optimization: collinearize then merge consecutive nearly-linear segments.
+pub fn optimize_bezier_curves(curves: &mut Vec<BezierCurve>) {
+    if curves.len() < 2 {
+        optimize_bezier_corners(curves);
+        return;
+    }
+
+    optimize_bezier_corners(curves);
+
+    let mut merged = Vec::with_capacity(curves.len());
+    let mut i = 0;
+    while i < curves.len() {
+        let mut current = curves[i].clone();
+        i += 1;
+        while i < curves.len() {
+            let next = &curves[i];
+            if point_dist(&current.end, &next.start) > 1.0 {
+                break;
+            }
+            if !(is_linear_curve(&current) && is_linear_curve(next)) {
+                break;
+            }
+            let start = &current.start;
+            let candidate_end = &next.end;
+            let dx = candidate_end.x - start.x;
+            let dy = candidate_end.y - start.y;
+            let line_len = (dx * dx + dy * dy).sqrt();
+            if line_len < 0.5 {
+                current = merge_linear_curves(&current, next);
+                i += 1;
+                continue;
+            }
+            let mid = &current.end;
+            let dist = ((mid.y - start.y) * dx - (mid.x - start.x) * dy).abs() / line_len;
+            if dist < 1.5 {
+                current = merge_linear_curves(&current, next);
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        merged.push(current);
+    }
+    *curves = merged;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -884,5 +953,42 @@ mod tests {
             let actual = String::from_utf8(buf).unwrap();
             assert_eq!(actual, expected, "fmt_num mismatch for {}", v);
         }
+    }
+
+    #[test]
+    fn optimize_curves_merges_collinear_segments() {
+        let t1 = 1.0 / 3.0;
+        let t2 = 2.0 / 3.0;
+        let seg = |x0: f64, y0: f64, x1: f64, y1: f64| BezierCurve {
+            start: Point { x: x0, y: y0 },
+            control1: Point {
+                x: x0 + t1 * (x1 - x0),
+                y: y0 + t1 * (y1 - y0),
+            },
+            control2: Point {
+                x: x0 + t2 * (x1 - x0),
+                y: y0 + t2 * (y1 - y0),
+            },
+            end: Point { x: x1, y: y1 },
+        };
+        let mut curves = vec![seg(0.0, 0.0, 5.0, 0.0), seg(5.0, 0.0, 10.0, 0.0), seg(10.0, 0.0, 15.0, 0.0)];
+        optimize_bezier_curves(&mut curves);
+        assert_eq!(curves.len(), 1);
+        assert_eq!(curves[0].start.x, 0.0);
+        assert_eq!(curves[0].end.x, 15.0);
+    }
+
+    #[test]
+    fn optimize_curves_preserves_corners() {
+        let fitter = BezierFitter::new(2.0);
+        let points = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 10.0, y: 0.0 },
+            Point { x: 10.0, y: 10.0 },
+        ];
+        let mut curves = fitter.fit_path(&points, false);
+        let before = curves.len();
+        optimize_bezier_curves(&mut curves);
+        assert_eq!(curves.len(), before, "right-angle path should keep segment count");
     }
 }

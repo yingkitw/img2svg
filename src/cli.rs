@@ -107,6 +107,10 @@ pub struct Cli {
     #[arg(long)]
     pub optimize_corners: bool,
 
+    /// Potrace `-O` style merge of consecutive nearly-linear curve segments
+    #[arg(long)]
+    pub optimize_curves: bool,
+
     /// Logo mode: separate fill regions and outline strokes
     #[arg(long)]
     pub logo_mode: bool,

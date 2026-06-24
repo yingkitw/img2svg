@@ -147,6 +147,7 @@ struct ConvertToolArgs {
     logo_mode: bool,
     superpixel: bool,
     optimize_corners: bool,
+    optimize_curves: bool,
     min_region_area: usize,
     preset: Option<Preset>,
     output_format: EnhancedOutputFormat,
@@ -210,6 +211,10 @@ impl ConvertToolArgs {
                 .get("optimize_corners")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            optimize_curves: args
+                .get("optimize_curves")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             min_region_area: args
                 .get("min_region_area")
                 .and_then(|v| v.as_i64())
@@ -241,6 +246,7 @@ impl ConvertToolArgs {
             logo_mode: self.logo_mode,
             use_superpixel: self.superpixel,
             optimize_corners: self.optimize_corners,
+            optimize_curves: self.optimize_curves,
             min_region_area: self.min_region_area,
             ..Default::default()
         };
@@ -374,6 +380,11 @@ fn shared_convert_properties() -> Value {
             "description": "Potrace-style Bézier corner optimization pass",
             "default": false
         },
+        "optimize_curves": {
+            "type": "boolean",
+            "description": "Potrace `-O` style merge of consecutive nearly-linear curve segments",
+            "default": false
+        },
         "min_region_area": {
             "type": "integer",
             "description": "Despeckle: merge connected regions smaller than this (pixels). 0 = off. Default: 20.",
@@ -454,6 +465,7 @@ impl Img2SvgMcpServer {
                                 "logo_mode": shared["logo_mode"],
                                 "superpixel": shared["superpixel"],
                                 "optimize_corners": shared["optimize_corners"],
+                                "optimize_curves": shared["optimize_curves"],
                                 "min_region_area": shared["min_region_area"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
@@ -483,6 +495,7 @@ impl Img2SvgMcpServer {
                                 "logo_mode": shared["logo_mode"],
                                 "superpixel": shared["superpixel"],
                                 "optimize_corners": shared["optimize_corners"],
+                                "optimize_curves": shared["optimize_curves"],
                                 "min_region_area": shared["min_region_area"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],

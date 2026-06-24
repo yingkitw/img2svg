@@ -640,6 +640,32 @@ fn test_despeckle_integration() {
 }
 
 #[test]
+fn test_enhanced_optimize_curves_reduces_segments() {
+    let test_img = PathBuf::from("/tmp/test_optimize_curves.png");
+    create_test_png(&test_img, 40, 10, "solid");
+    let image = load_image(&test_img).expect("load");
+    let base = EnhancedOptions {
+        num_colors: 4,
+        preprocess: false,
+        min_region_area: 0,
+        ..Default::default()
+    };
+    let plain = vectorize_enhanced(&image, &base).expect("plain");
+    let optimized = vectorize_enhanced(
+        &image,
+        &EnhancedOptions {
+            optimize_curves: true,
+            ..base
+        },
+    )
+    .expect("optimized");
+    let plain_curves: usize = plain.paths.iter().map(|p| p.curves.len()).sum();
+    let opt_curves: usize = optimized.paths.iter().map(|p| p.curves.len()).sum();
+    assert!(opt_curves <= plain_curves);
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
 fn test_batch_convert_enhanced_examples_input() {
     let input_dir = PathBuf::from("examples/input");
     if !input_dir.exists() {

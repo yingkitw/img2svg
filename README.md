@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-258%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-261%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -239,6 +239,7 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--superpixel` | | false | SLIC superpixel segmentation instead of k-means quantization |
 | `--centerline` | | false | Stroke/centerline tracing for line art (stroke-only SVG paths) |
 | `--optimize-corners` | | false | Potrace-style Bézier corner optimization pass |
+| `--optimize-curves` | | false | Potrace `-O` style merge of consecutive nearly-linear segments |
 | `--logo-mode` | | false | Separate fill regions and outline strokes (auto with `--preset logo`) |
 | `--min-region-area` | | 20 | Despeckle: merge connected regions smaller than N pixels (Potrace turdsize) |
 | `--no-despeckle` | | false | Disable despeckle pass |
@@ -313,7 +314,7 @@ The `image_filters` module is re-exported at the crate root for preprocessing an
 
 The MCP (Model Context Protocol) server is built into the same codebase and allows AI assistants (like Claude Desktop) to convert images to SVG directly.
 
-**Note:** The MCP tool uses the **enhanced Bézier pipeline by default** (same as the CLI without `--original`). Pass `"legacy": true` for the median-cut / RDP line-segment pipeline. Optional parameters mirror CLI flags: `preset`, `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, and `output_format` (`svg`, `eps`, `pdf`, `ai`).
+**Note:** The MCP tool uses the **enhanced Bézier pipeline by default** (same as the CLI without `--original`). Pass `"legacy": true` for the median-cut / RDP line-segment pipeline. Optional parameters mirror CLI flags: `preset`, `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `optimize_curves`, and `output_format`
 
 #### Installation
 
@@ -368,7 +369,7 @@ The MCP server provides two tools:
   - `preprocess` (optional): Photo preprocessing before vectorization (default: **true**)
   - `legacy` (optional): Use legacy line-segment pipeline (default: **false**)
   - `preset` (optional): `logo`, `photo`, or `icon`
-  - `centerline`, `logo_mode`, `superpixel`, `optimize_corners` (optional booleans)
+  - `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `optimize_curves` (optional booleans)
   - `output_format` (optional): `svg`, `eps`, `pdf`, or `ai`
   - `smooth_level`, `threshold` (optional): Legacy pipeline only
   - `max_size`, `progress_token` (optional)
