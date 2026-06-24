@@ -20,11 +20,12 @@
 - [x] Unit tests for image_processor (13 tests)
 - [x] Unit tests for vectorizer (35 tests)
 - [x] Unit tests for svg_generator (20 tests)
-- [x] Integration tests (14 tests): legacy pipeline, **enhanced pipeline** (`vectorize_enhanced` / `write_enhanced_svg` / `generate_enhanced_svg`), **`convert` / `convert_to_svg_string`**, auto `num_colors`
+- [x] Integration tests (21 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency)
 - [x] CLI unit tests: `is_supported_image` extension checks (3 tests, `src/cli.rs`)
 - [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (6 tests, `src/mcp.rs`)
 - [x] Library API tests (1 test)
 - [x] Run `cargo test` for full counts (lib + binary targets + `img2svg-mcp` + integration + doctests)
+- [x] Criterion benchmark `benches/pipeline_comparison.rs` (original vs enhanced at 128/256/512 px)
 
 ### Project Structure
 - [x] Library API (lib.rs)
@@ -62,6 +63,7 @@
 - [x] Distance-based collinear merge catches diagonal staircases from marching squares
 - [x] Adaptive simplification tolerance (2x for photos, 1.5 for graphics)
 - [x] Visual comparison page with lenna.png, 6 test images total
+- [x] Use-case example images: logo, line_art, transparency, icon (10 images in `examples/input/`)
 - [x] Control point clamping to image bounds (fixes corner bulging in medium.png)
 - [x] Auto-preprocessing for photos in enhanced pipeline (bilateral filter + color reduction)
 - [x] Image corner injection: detect edge transitions after snapping, insert 90° corner points
@@ -102,8 +104,8 @@
 - [x] Real-time progress notifications (`notifications/progress`) during conversion with `progress_token`
 
 ### Documentation
-- [ ] More example images demonstrating different use cases
-- [ ] Performance benchmarks comparing original vs enhanced pipeline
+- [x] More example images demonstrating different use cases (logo, line_art, transparency, icon + docs/comparison page)
+- [x] Performance benchmarks comparing original vs enhanced pipeline (`cargo bench --bench pipeline_comparison`, documented in README)
 
 ### Advanced Features
 - [ ] Superpixel segmentation as alternative to color quantization
@@ -166,3 +168,9 @@
 - [ ] Support for spot color (Pantone) matching
 - [ ] Layer-aware vectorization for Photoshop files
 - [ ] Vector-to-raster comparison tools
+
+### Competitive gaps (from Potrace, vtracer, Inkscape trace)
+- [ ] Corner optimization / curve optimization pass (Potrace-style)
+- [ ] Centerline tracing mode for line art (vtracer)
+- [ ] Multi-pass outline + fill separation for logos
+- [ ] CLI `--preset logo|photo|icon` with tuned defaults

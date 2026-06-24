@@ -49,7 +49,17 @@ Converting raster images to vector format is essential for:
 
 ## Examples & Quality
 
-See the `examples/` directory for sample conversions demonstrating quality.
+See the `examples/` directory for sample conversions demonstrating quality. **`examples/comparison.html`** compares original vs default pipelines side-by-side for all 10 test images.
+
+**Use-case images** (see [`examples/README.md`](examples/README.md)):
+
+| Image | Use case | Suggested flags |
+|-------|----------|-----------------|
+| `logo.png` | Flat brand logo | `-c 8 -s 2` |
+| `line_art.png` | Thin strokes / grid | `-c 4` |
+| `transparency.png` | RGBA / alpha | default |
+| `icon.png` | 128×128 app icon | `-c 12 -s 2` |
+| `lenna.png` | Photograph | `--preprocess -c 12` |
 
 ### Simple Graphics (8 colors)
 
@@ -351,19 +361,28 @@ The original pipeline (`--original`) uses median-cut quantization, RDP simplific
 
 img2svg is optimized for speed and memory:
 
-- **Speed**: Typical 1000x1000 image converts in <1 second
+- **Speed**: Typical 512×512 checkerboard converts in ~60–70 ms (enhanced pipeline)
 - **Memory**: Auto-resize for large images (configurable `--max-size`, default 4096)
 - **Parallelization**: Rayon parallel path processing (smooth → simplify → Bézier fit)
 - **Batch Mode**: Convert entire directories in one command
 
-Benchmarks (1000x1000px image):
+### Benchmarks (original vs enhanced)
 
-| Colors | Time | Output Size |
-|--------|------|-------------|
-| 8 | 0.3s | 45 KB |
-| 16 | 0.5s | 78 KB |
-| 32 | 0.8s | 156 KB |
-| 64 | 1.4s | 312 KB |
+Run the Criterion suite on a synthetic 16-color checkerboard:
+
+```bash
+cargo bench --bench pipeline_comparison
+```
+
+Results on a representative machine (release build, `vectorize + SVG` end-to-end):
+
+| Image size | Original pipeline | Enhanced pipeline (default) |
+|------------|-------------------|----------------------------|
+| 128×128 | ~2.4 ms | ~4.2 ms |
+| 256×256 | ~10.6 ms | ~15.3 ms |
+| 512×512 | ~62 ms | ~65 ms |
+
+The enhanced Bézier pipeline adds roughly 50–70% overhead at small sizes but converges with the original pipeline around 512×512 on simple two-tone images. Photos and complex graphics cost more in both pipelines; use `--preprocess` and tune `-c` for the best quality/size tradeoff.
 
 ## Tips for Best Results
 

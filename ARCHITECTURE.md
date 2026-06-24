@@ -33,13 +33,21 @@ src/
 tests/
 └── integration_tests.rs    # Integration tests for full pipeline
 
+benches/
+└── pipeline_comparison.rs  # Criterion: original vs enhanced pipeline timing
+
 examples/
 ├── input/                  # Test input images (PNG)
 │   ├── simple.png
 │   ├── gradient.png
 │   ├── medium.png
 │   ├── complex.png
-│   └── very_complex.png
+│   ├── very_complex.png
+│   ├── lenna.png
+│   ├── logo.png            # Flat brand logo (few colors)
+│   ├── line_art.png        # Thin strokes / grid lines
+│   ├── transparency.png    # RGBA / fill-opacity
+│   └── icon.png            # 128×128 app icon
 ├── output/                 # Generated SVG files
 │   ├── simple.svg
 │   ├── gradient.svg

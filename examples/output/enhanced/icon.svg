@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" fill="#2d3436" />
+  <path fill="#74b9ff" stroke="#74b9ff" stroke-width="0.5" stroke-linejoin="round" d="M34,36.5L28,43.5C17.05,103.95 111.95,103.95 101,43.5L94.42,36.08L85,36.5L84.5,41L44,40.5L43.5,36L34,36.5ZM91.5,44L97,49.5L91.5,53L88,47.5L91.5,44ZM61.5,52C65.44,52.06 70.08,53.42 75.42,56.08C85.85,71.33 44.3,89.85 48.08,65.58C48.41,62.62 50.75,60.25 52.08,57.58C53.61,54.52 58.03,54.19 61,52.5L61.5,52Z"/>
+  <path fill="#636e72" stroke="#636e72" stroke-width="0.5" stroke-linejoin="round" d="M44,28.5L44.5,41L85,40.5L84.5,28L44,28.5Z"/>
+  <path fill="#a29bfe" stroke="#a29bfe" stroke-width="0.5" stroke-linejoin="round" d="M61,56.5L54.5,61C48.35,75.1 80.65,84.65 76.92,65.58C76.36,62.76 73.64,60.86 72,58.5C70.03,55.66 65.44,56.06 61.5,56L61,56.5Z"/>
+  <path fill="#fdcb6e" stroke="#fdcb6e" stroke-width="0.5" stroke-linejoin="round" d="M91,44.5L88,49.5L93.5,53L97,47.5L91,44.5Z"/>
+</svg>

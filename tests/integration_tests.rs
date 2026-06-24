@@ -439,3 +439,76 @@ fn test_load_animated_gif() {
 
     let _ = fs::remove_file(&test_gif);
 }
+
+#[test]
+fn test_original_and_enhanced_pipelines_same_image() {
+    let test_img = PathBuf::from("/tmp/img2svg_pipeline_parity.png");
+    create_test_png(&test_img, 64, 64, "checkerboard");
+
+    let image_data = load_image(&test_img).expect("load");
+
+    let original = vectorize(&image_data, 8, 0.1, 3, false).expect("original vectorize");
+    let mut original_buf = Vec::new();
+    img2svg::svg_generator::generate_svg_to(&original, &mut original_buf).expect("original svg");
+    let original_svg = String::from_utf8(original_buf).expect("utf8");
+    assert!(original_svg.contains("<svg"));
+    assert!(original_svg.contains("width=\"64\""));
+
+    let enhanced_opts = EnhancedOptions {
+        num_colors: 8,
+        preprocess: false,
+        ..Default::default()
+    };
+    let enhanced =
+        vectorize_enhanced(&image_data, &enhanced_opts).expect("enhanced vectorize");
+    let enhanced_svg = generate_enhanced_svg(&enhanced);
+    assert!(enhanced_svg.contains("<svg"));
+    assert!(enhanced_svg.contains("viewBox=\"0 0 64 64\""));
+
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_use_case_logo_converts() {
+    let input = PathBuf::from("examples/input/logo.png");
+    if !input.exists() {
+        return;
+    }
+    let output = PathBuf::from("/tmp/img2svg_use_case_logo.svg");
+    let image_data = load_image(&input).expect("load logo");
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("vectorize logo");
+    write_enhanced_svg(&data, &output).expect("write logo svg");
+    let svg = fs::read_to_string(&output).expect("read");
+    assert!(svg.contains("<svg"));
+    assert!(svg.to_lowercase().contains("4ecdc4"));
+    let _ = fs::remove_file(&output);
+}
+
+#[test]
+fn test_use_case_transparency_preserves_fill_opacity() {
+    let input = PathBuf::from("examples/input/transparency.png");
+    if !input.exists() {
+        return;
+    }
+    let image_data = load_image(&input).expect("load transparency");
+    assert!(
+        image_data.pixels.iter().any(|p| p.a < 255),
+        "transparency.png should contain non-opaque pixels"
+    );
+    let opts = EnhancedOptions {
+        num_colors: 16,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("vectorize");
+    let svg = generate_enhanced_svg(&data);
+    assert!(
+        svg.contains("fill-opacity") || svg.contains("stroke-opacity"),
+        "SVG should preserve alpha as opacity attributes"
+    );
+}

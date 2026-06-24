@@ -171,6 +171,77 @@ def create_gradient_test():
     print("Created gradient.png - Color gradient transitions")
 
 
+def create_logo_image():
+    """Logo: flat brand mark with few solid colors (icons, branding)."""
+    img = Image.new('RGB', (WIDTH, HEIGHT), '#1a1a2e')
+    draw = ImageDraw.Draw(img)
+
+    # Stylized mark: chevron + accent dot
+    draw.polygon(
+        [(200, 50), (70, 350), (145, 350), (200, 220), (255, 350), (330, 350)],
+        fill='#4ecdc4',
+    )
+    draw.rectangle([170, 175, 230, 215], fill='#1a1a2e')
+    draw.ellipse([300, 280, 370, 350], fill='#ff6b6b')
+    draw.rectangle([40, 40, 120, 55], fill='#ffd93d')
+
+    img.save(f"{output_dir}/logo.png")
+    print("Created logo.png - Flat logo with sharp edges (use: -c 8 -s 2)")
+
+
+def create_line_art_image():
+    """Line art: thin strokes on white (tests thin-stripe fast path)."""
+    img = Image.new('RGB', (WIDTH, HEIGHT), 'white')
+    draw = ImageDraw.Draw(img)
+
+    # Grid of 1px lines
+    for i in range(0, WIDTH, 24):
+        draw.line([(i, 0), (i, HEIGHT)], fill='black', width=1)
+        draw.line([(0, i), (WIDTH, i)], fill='black', width=1)
+
+    # Curves and diagonals
+    draw.arc([80, 80, 320, 320], 0, 300, fill='black', width=2)
+    draw.line([(40, 360), (360, 40)], fill='black', width=2)
+    draw.line([(360, 360), (40, 40)], fill='black', width=1)
+
+    img.save(f"{output_dir}/line_art.png")
+    print("Created line_art.png - Thin line art (use: -c 4 --original or default)")
+
+
+def create_transparency_image():
+    """Transparency: overlapping shapes with alpha (tests fill-opacity in SVG)."""
+    img = Image.new('RGBA', (WIDTH, HEIGHT), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+
+    draw.ellipse([40, 40, 260, 260], fill=(255, 59, 48, 200))
+    draw.ellipse([140, 100, 360, 320], fill=(0, 122, 255, 140))
+    draw.rectangle([120, 200, 280, 360], fill=(46, 204, 113, 180))
+    draw.ellipse([280, 280, 380, 380], fill=(255, 255, 255, 255))
+
+    img.save(f"{output_dir}/transparency.png")
+    print("Created transparency.png - RGBA overlaps (use: default pipeline)")
+
+
+def create_icon_image():
+    """Icon: small pixel-style app icon (128x128)."""
+    size = 128
+    img = Image.new('RGB', (size, size), '#2d3436')
+    draw = ImageDraw.Draw(img)
+
+    # Simple "camera" pixel icon
+    try:
+        draw.rounded_rectangle([28, 36, 100, 92], radius=8, fill='#74b9ff')
+    except AttributeError:
+        draw.rectangle([28, 36, 100, 92], fill='#74b9ff')
+    draw.ellipse([48, 52, 80, 84], fill='#2d3436')
+    draw.ellipse([52, 56, 76, 80], fill='#a29bfe')
+    draw.rectangle([44, 28, 84, 40], fill='#636e72')
+    draw.ellipse([88, 44, 96, 52], fill='#fdcb6e')
+
+    img.save(f"{output_dir}/icon.png")
+    print("Created icon.png - Small app icon (use: -c 12 -s 2)")
+
+
 if __name__ == "__main__":
     print("Generating test images for img2svg conversion testing...\n")
 
@@ -178,6 +249,10 @@ if __name__ == "__main__":
     create_medium_image()
     create_complex_image()
     create_very_complex_image()
+    create_logo_image()
+    create_line_art_image()
+    create_transparency_image()
+    create_icon_image()
 
     # Try gradient test, may not work in all PIL versions
     try:
@@ -193,3 +268,7 @@ if __name__ == "__main__":
     print("  4. very_complex.png - High detail (stress test)")
     if os.path.exists(f"{output_dir}/gradient.png"):
         print("  5. gradient.png - Color gradients (tests color accuracy)")
+    print("  6. logo.png - Flat brand logo (few colors, sharp edges)")
+    print("  7. line_art.png - Thin strokes (line art / stripe handling)")
+    print("  8. transparency.png - RGBA overlaps (alpha / fill-opacity)")
+    print("  9. icon.png - Small 128x128 app icon")

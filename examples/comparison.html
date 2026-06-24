@@ -178,18 +178,54 @@
       <td>290</td>
       <td><span class="tag tag-better">0.4×!</span> Auto-preprocessed (bilateral filter); perceptual k-means++; smooth Bézier</td>
     </tr>
+    <tr>
+      <td><strong>logo</strong></td>
+      <td>400x400, flat brand mark</td>
+      <td>560 B</td>
+      <td>866 B</td>
+      <td>4</td>
+      <td>Sharp corners; few colors — ideal for `-c 8` logos</td>
+    </tr>
+    <tr>
+      <td><strong>line_art</strong></td>
+      <td>400x400, 1px grid + strokes</td>
+      <td>1,300 B</td>
+      <td>17,335 B</td>
+      <td>352</td>
+      <td>Many thin paths; tests stripe fast path and path count</td>
+    </tr>
+    <tr>
+      <td><strong>transparency</strong></td>
+      <td>400x400, RGBA overlaps</td>
+      <td>1,047 B</td>
+      <td>964 B</td>
+      <td>3</td>
+      <td>Alpha preserved as <code>fill-opacity</code> in SVG</td>
+    </tr>
+    <tr>
+      <td><strong>icon</strong></td>
+      <td>128x128, app icon</td>
+      <td>582 B</td>
+      <td>1,014 B</td>
+      <td>6</td>
+      <td>Small UI icon; compact output at low resolution</td>
+    </tr>
   </tbody>
 </table>
 
 <script>
-const images = ['simple', 'medium', 'complex', 'very_complex', 'gradient', 'lenna'];
+const images = ['simple', 'medium', 'complex', 'very_complex', 'gradient', 'lenna', 'logo', 'line_art', 'transparency', 'icon'];
 const descriptions = {
   simple: 'Basic geometric shapes with solid colors',
   medium: 'Multiple overlapping shapes with varied colors',
   complex: 'Many shapes, patterns, and color variations',
   very_complex: 'High detail with many color transitions',
   gradient: 'Smooth color gradient transitions',
-  lenna: 'Classic photograph — tests photo vectorization quality'
+  lenna: 'Classic photograph — tests photo vectorization quality',
+  logo: 'Flat brand logo — sharp edges, few colors',
+  line_art: 'Thin strokes and grid lines — line art use case',
+  transparency: 'RGBA overlaps — alpha channel / fill-opacity',
+  icon: '128×128 app icon — small UI asset'
 };
 
 const container = document.createElement('div');

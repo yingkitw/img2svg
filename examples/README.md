@@ -96,6 +96,82 @@ This directory contains test images of varying complexity to validate the img2sv
 **Expected conversion quality**: Since SVG supports gradients, the converter should ideally detect and generate SVG gradients rather than hundreds of discrete shapes.
 
 
+### 6. [logo.png](input/logo.png) - Brand Logo
+**Purpose**: Flat logo with few solid colors and sharp edges
+
+**Contents**:
+- Dark background with teal chevron mark
+- Red accent circle and yellow bar
+
+**What it validates**:
+- Logo/icon conversion with low color count
+- Sharp corner preservation (Bézier + corner injection)
+- Small file size with `-c 8`
+
+**Recommended command**:
+```bash
+img2svg -i examples/input/logo.png -o examples/output/logo.svg -c 8 -s 2
+```
+
+
+### 7. [line_art.png](input/line_art.png) - Line Art
+**Purpose**: Thin 1–2px strokes on white background
+
+**Contents**:
+- Grid of single-pixel lines
+- Arc and diagonal strokes
+
+**What it validates**:
+- Thin stripe fast path (contours < 2px → SVG rects)
+- High path count handling
+- Line art / technical drawing use case
+
+**Recommended command**:
+```bash
+img2svg -i examples/input/line_art.png -o examples/output/line_art.svg -c 4
+```
+
+
+### 8. [transparency.png](input/transparency.png) - Alpha Channel
+**Purpose**: Overlapping semi-transparent shapes (RGBA)
+
+**Contents**:
+- Red, blue, and green shapes with varying alpha
+- Transparent background regions
+
+**What it validates**:
+- Alpha channel preserved as `fill-opacity` in SVG
+- Overlapping color region extraction
+
+**Recommended command**:
+```bash
+img2svg -i examples/input/transparency.png -o examples/output/transparency.svg
+```
+
+
+### 9. [icon.png](input/icon.png) - App Icon (128×128)
+**Purpose**: Small pixel-style icon for UI/app use
+
+**Contents**:
+- 128×128 camera-style icon on dark background
+- Few distinct flat colors
+
+**What it validates**:
+- Small image conversion
+- Icon-scale detail at low dimensions
+
+**Recommended command**:
+```bash
+img2svg -i examples/input/icon.png -o examples/output/icon.svg -c 12 -s 2
+```
+
+
+### 10. [lenna.png](input/lenna.png) - Photograph
+**Purpose**: Real-world photo with `--preprocess`
+
+See main [README](../README.md) for lenna comparison (with/without preprocessing).
+
+
 ## Usage
 
 ### Running Tests
@@ -104,19 +180,30 @@ To test your img2svg converter:
 
 ```bash
 # Test simple conversion
-cargo run -- examples/input/simple.png examples/output/simple.svg
+cargo run -- -i examples/input/simple.png -o examples/output/simple.svg
 
 # Test medium complexity
-cargo run -- examples/input/medium.png examples/output/medium.svg
+cargo run -- -i examples/input/medium.png -o examples/output/medium.svg
 
 # Test complex conversion
-cargo run -- examples/input/complex.png examples/output/complex.svg
+cargo run -- -i examples/input/complex.png -o examples/output/complex.svg
 
 # Stress test
-cargo run -- examples/input/very_complex.png examples/output/very_complex.svg
+cargo run -- -i examples/input/very_complex.png -o examples/output/very_complex.svg
 
 # Test gradient handling
-cargo run -- examples/input/gradient.png examples/output/gradient.svg
+cargo run -- -i examples/input/gradient.png -o examples/output/gradient.svg
+
+# Logo / icon use cases
+cargo run -- -i examples/input/logo.png -o examples/output/logo.svg -c 8 -s 2
+cargo run -- -i examples/input/icon.png -o examples/output/icon.svg -c 12 -s 2
+
+# Line art and transparency
+cargo run -- -i examples/input/line_art.png -o examples/output/line_art.svg -c 4
+cargo run -- -i examples/input/transparency.png -o examples/output/transparency.svg
+
+# Photo with preprocessing
+cargo run -- -i examples/input/lenna.png -o examples/output/lenna.svg --preprocess -c 12
 ```
 
 ### Validation Checklist
@@ -140,6 +227,11 @@ For each converted SVG, check:
 | complex.png | < 2s | < 100 KB | Good overall, minor detail loss acceptable |
 | very_complex.png | < 10s | < 500 KB | Acceptable quality, focus on completion |
 | gradient.png | < 1s | < 50 KB (with gradient detection) | Smooth gradients preferred |
+| logo.png | < 0.2s | < 2 KB | Near perfect at `-c 8` |
+| line_art.png | < 1s | varies (many paths) | Thin lines preserved |
+| transparency.png | < 0.3s | < 2 KB | `fill-opacity` in SVG |
+| icon.png | < 0.1s | < 2 KB | Clean small icon |
+| lenna.png | < 2s | < 50 KB with `--preprocess` | Photo; use preprocessing |
 
 
 ## Regenerating Test Images

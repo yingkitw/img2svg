@@ -1,6 +1,6 @@
 [package]
 name = "img2svg"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "A rust native image to SVG converter in CLI/MCP/Library"
 authors = ["Ying Kit WONG"]
@@ -41,5 +41,9 @@ name = "img2svg-mcp"
 path = "src/mcp.rs"
 required-features = []
 
+[[bench]]
+name = "pipeline_comparison"
+harness = false
+
 [dev-dependencies]
-# Add test dependencies if needed
+criterion = { version = "0.5", features = ["html_reports"] }
