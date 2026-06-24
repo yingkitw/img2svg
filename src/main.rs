@@ -8,6 +8,7 @@ mod enhanced_quantizer;
 mod region_extractor;
 mod path_simplifier;
 mod bezier_fitter;
+mod despeckle;
 mod image_filters;
 mod enhanced_vectorizer;
 mod centerline_tracer;
@@ -37,6 +38,11 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         centerline: cli.centerline,
         optimize_corners: cli.optimize_corners,
         logo_mode: cli.logo_mode,
+        min_region_area: if cli.no_despeckle {
+            0
+        } else {
+            cli.min_region_area
+        },
         ..Default::default()
     }
 }

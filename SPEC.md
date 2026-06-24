@@ -21,8 +21,26 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--centerline`: Centerline/stroke tracing for line art
   - `--optimize-corners`: Potrace-style Bézier corner optimization
   - `--logo-mode`: Separate fill regions and outline strokes (auto-enabled for `--preset logo`)
+  - `--min-region-area`: Despeckle threshold in pixels (default 20; Potrace turdsize equivalent)
+  - `--no-despeckle`: Disable despeckle pass
   - `--tune`: Generate HTML parameter comparison grid
   - `--format`: Output format — `svg`, `eps`, `pdf`, or `ai` (default `svg`; inferred from `-o` extension)
+
+### MCP Tool (`convert_image_to_svg`)
+- Default pipeline: **enhanced Bézier** (matches CLI without `--original`)
+- `input_path`, `output_path` (required)
+- `legacy` (boolean, default false): median-cut / RDP line-segment pipeline
+- `num_colors`, `preprocess` (default true), `preset` (`logo`|`photo`|`icon`)
+- `centerline`, `logo_mode`, `superpixel`, `optimize_corners` (booleans)
+- `output_format`: `svg`, `eps`, `pdf`, or `ai`
+- `smooth_level`, `threshold` (legacy only)
+- `max_size`, `progress_token`
+- Response `details`: `pipeline`, `output_format`, `output_size_bytes`, `width`, `height`, `colors_used`
+
+### MCP Tool (`convert_image_directory`)
+- Batch convert all supported images in `input_dir` → `output_dir` (enhanced pipeline only)
+- `input_dir`, `output_dir` (required); same optional flags as single-file (except `legacy`)
+- Response `details`: `total`, `converted`, `errors`, `files[]` with per-file `success` / `error`
 
 ## Output
 - Vector file: SVG (default), EPS, minimal PDF, or Illustrator-compatible AI wrapper
@@ -72,7 +90,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 377 tests passing (193 lib + 154 bin + 10 MCP + 18 integration + 2 doctests)
+- ✅ 258 tests passing (207 lib + 204 bin + 14 MCP + 29 integration + 3 doctests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -95,9 +113,9 @@ Applied before quantization for photographs:
 | WebP input | ✅ | Full support via image crate |
 | TIFF input | ✅ | Full support via image crate |
 | Transparency/Alpha | ✅ | Preserved as `fill-opacity`/`stroke-opacity` in SVG |
-| CMYK colorspace | ❌ | Not supported (converts to RGB) |
+| CMYK colorspace | ✅ | JPEG APP14 detection + `cmyk_to_rgb` conversion |
 | Grayscale images | ✅ | Converted to RGB (R=G=B) |
-| Animated GIF | ❌ | First frame only |
+| Animated GIF | ✅ | Frame-by-frame numbered SVG output (CLI) |
 
 ## Test Suite
 
@@ -129,10 +147,10 @@ Applied before quantization for photographs:
   - Conversion options defaults
 - `cli.rs`: 3 tests
   - Supported image extension checks
-- `mcp.rs`: 6 tests
-  - Server initialization, tool schema, validation, happy path
+- `mcp.rs`: 12 tests
+  - Server initialization, tool schema, validation, enhanced default, legacy, preset, EPS export, progress
 
-### Integration Tests (14 total)
+### Integration Tests (27 total)
 - Full pipeline conversion tests (legacy + enhanced)
 - Test image creation (gradient, checkerboard, circle, solid)
 - SVG output validation
@@ -187,7 +205,10 @@ Recommended: img2svg -i lenna.png -o lenna.svg --preprocess -c 12
 - `generate_enhanced_svg_to` (incremental writer-based SVG generation for enhanced pipeline)
 - `convert`
 - `convert_to_svg_string`
-- `vectorize_enhanced` / `write_enhanced_svg` / `generate_enhanced_svg`
+- `convert_enhanced` / `convert_enhanced_to_svg_string` / `convert_enhanced_data`
+- `batch_convert_enhanced` / `is_supported_image`
+- `despeckle` / `min_region_area` on `EnhancedOptions`
+- `write_enhanced_output` / `EnhancedOutputFormat`
 - Gradient detection (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
 - Animated GIF loading (`load_animated_gif`, `GifFrame`) and per-frame SVG conversion (`convert_animated_gif`)
 - CMYK color space support (`cmyk_to_rgb`, `image_data_from_cmyk`, `detect_color_space`, `ColorSpace`)

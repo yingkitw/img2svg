@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-236%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-258%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -240,6 +240,8 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--centerline` | | false | Stroke/centerline tracing for line art (stroke-only SVG paths) |
 | `--optimize-corners` | | false | Potrace-style Bézier corner optimization pass |
 | `--logo-mode` | | false | Separate fill regions and outline strokes (auto with `--preset logo`) |
+| `--min-region-area` | | 20 | Despeckle: merge connected regions smaller than N pixels (Potrace turdsize) |
+| `--no-despeckle` | | false | Disable despeckle pass |
 | `--tune` | | false | Generate HTML parameter comparison grid instead of converting |
 | `--format` | | svg | Output format: `svg`, `eps`, `pdf`, or `ai` (also inferred from `-o` extension) |
 
@@ -267,12 +269,14 @@ The default enhanced pipeline tunes smoothing and edge-aware quantization intern
 There are two conversion paths:
 
 - **`convert` / `convert_to_svg_string`** — legacy pipeline (`vectorize` + `generate_svg`), controlled by `ConversionOptions` (same behavior as CLI **`--original`**).
-- **`vectorize_enhanced` + `write_enhanced_svg` / `generate_enhanced_svg`** — default high-quality pipeline (Bézier fitting, edge-aware quantization); matches the **CLI without `--original`**.
+- **`convert_enhanced` / `convert_enhanced_to_svg_string`** — default enhanced Bézier pipeline (same as CLI default). Format inferred from output path extension (also supports `.eps`, `.pdf`, `.ai`).
+
+For lower-level control, use **`vectorize_enhanced` + `write_enhanced_svg` / `write_enhanced_output`**, or **`batch_convert_enhanced`** for directory batch runs.
 
 ```rust
 use img2svg::{
-    convert, convert_to_svg_string, load_image, ConversionOptions,
-    vectorize_enhanced, write_enhanced_svg, EnhancedOptions,
+    convert, convert_enhanced, convert_enhanced_to_svg_string, load_image, ConversionOptions,
+    EnhancedOptions, EnhancedOutputFormat, batch_convert_enhanced,
 };
 use std::path::Path;
 
@@ -281,16 +285,24 @@ let options = ConversionOptions::default();
 convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 
 // Default / enhanced pipeline (CLI default)
-let image = load_image(Path::new("input.png"))?;
 let opts = EnhancedOptions {
     num_colors: 16,
     ..Default::default()
 };
-let data = vectorize_enhanced(&image, &opts)?;
-write_enhanced_svg(&data, Path::new("output.svg"))?;
+convert_enhanced(Path::new("input.png"), Path::new("output.svg"), &opts)?;
 
-// In-memory SVG string (legacy pipeline only)
-let svg = convert_to_svg_string(&image, &options)?;
+// Batch directory (CLI: img2svg -i dir/ -o out/)
+batch_convert_enhanced(
+    Path::new("examples/input"),
+    Path::new("examples/output"),
+    &opts,
+    EnhancedOutputFormat::Svg,
+    4096,
+)?;
+
+// In-memory SVG string (enhanced pipeline)
+let image = load_image(Path::new("input.png"))?;
+let svg = convert_enhanced_to_svg_string(&image, &opts)?;
 ```
 
 #### Image filters (optional)
@@ -301,7 +313,7 @@ The `image_filters` module is re-exported at the crate root for preprocessing an
 
 The MCP (Model Context Protocol) server is built into the same codebase and allows AI assistants (like Claude Desktop) to convert images to SVG directly.
 
-**Note:** The MCP tool invokes the library’s **`convert` / `ConversionOptions`** path (legacy pipeline: median-cut, RDP, line-segment SVG)—the same knobs as **`img2svg --original`**. It does **not** currently call the default CLI enhanced Bézier pipeline; use the **`img2svg` binary** for that behavior.
+**Note:** The MCP tool uses the **enhanced Bézier pipeline by default** (same as the CLI without `--original`). Pass `"legacy": true` for the median-cut / RDP line-segment pipeline. Optional parameters mirror CLI flags: `preset`, `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, and `output_format` (`svg`, `eps`, `pdf`, `ai`).
 
 #### Installation
 
@@ -347,20 +359,31 @@ Once configured, restart Claude Desktop and use the tool directly in conversatio
 
 > "Convert the image at /path/to/logo.png to SVG with 8 colors"
 
-The MCP server provides one tool:
-- `convert_image_to_svg`: Converts raster images to SVG format
+The MCP server provides two tools:
+
+**`convert_image_to_svg`** — single file conversion (SVG default; also EPS/PDF/AI)
   - `input_path` (required): Path to input image
-  - `output_path` (required): Path for output SVG
+  - `output_path` (required): Path for output file
   - `num_colors` (optional): Number of colors (1-64, default: 16)
-  - `smooth_level` (optional): Smoothing level (0-10, default: 5)
-  - `threshold` (optional): Edge detection threshold (0.0-1.0, default: 0.1)
-  - `preprocess` (optional): Use the enhanced Bézier pipeline with preprocessing (default: false)
+  - `preprocess` (optional): Photo preprocessing before vectorization (default: **true**)
+  - `legacy` (optional): Use legacy line-segment pipeline (default: **false**)
+  - `preset` (optional): `logo`, `photo`, or `icon`
+  - `centerline`, `logo_mode`, `superpixel`, `optimize_corners` (optional booleans)
+  - `output_format` (optional): `svg`, `eps`, `pdf`, or `ai`
+  - `smooth_level`, `threshold` (optional): Legacy pipeline only
+  - `max_size`, `progress_token` (optional)
 
 **Response details**: When conversion succeeds, the result includes a `details` object with:
-- `pipeline`: `"legacy"` or `"enhanced"` depending on `preprocess`
-- `output_size_bytes`: Size of the generated SVG file
-- `width` / `height`: Image dimensions (enhanced pipeline only)
-- `colors_used`: Number of color paths in the output
+- `pipeline`: `"enhanced"` (default) or `"legacy"`
+- `output_format`: `svg`, `eps`, `pdf`, or `ai`
+- `output_size_bytes`: Size of the generated file
+- `width` / `height`: Image dimensions
+- `colors_used`: Unique colors in the output
+
+**`convert_image_directory`** — batch convert all supported images in a directory (matches `img2svg -i dir/ -o out/`)
+  - `input_dir`, `output_dir` (required)
+  - Same enhanced-pipeline options as single-file convert (no `legacy` support in batch)
+  - Response `details`: `total`, `converted`, `errors`, `files` (per-file success/error)
 
 ## Algorithm
 

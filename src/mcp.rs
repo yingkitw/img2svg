@@ -5,11 +5,11 @@
 //! to SVG format.
 
 use img2svg::{
-    generate_svg, load_image, vectorize, vectorize_enhanced, write_enhanced_svg,
-    EnhancedOptions,
+    batch_convert_enhanced, convert_enhanced_data, generate_svg, load_image, vectorize,
+    EnhancedOptions, EnhancedOutputFormat,
 };
 use img2svg::image_processor::resize_if_needed;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
@@ -80,6 +80,324 @@ struct ConversionInfo {
     height: u32,
     colors_used: usize,
     pipeline: &'static str,
+    output_format: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Preset {
+    Logo,
+    Photo,
+    Icon,
+}
+
+impl Preset {
+    fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "logo" => Some(Self::Logo),
+            "photo" => Some(Self::Photo),
+            "icon" => Some(Self::Icon),
+            _ => None,
+        }
+    }
+
+    fn apply(self, opts: &mut EnhancedOptions) {
+        match self {
+            Preset::Logo => {
+                opts.num_colors = 8;
+                opts.preprocess = false;
+                opts.logo_mode = true;
+            }
+            Preset::Photo => {
+                opts.num_colors = 12;
+                opts.preprocess = true;
+            }
+            Preset::Icon => {
+                opts.num_colors = 12;
+                opts.preprocess = false;
+            }
+        }
+    }
+}
+
+fn count_unique_path_colors(data: &img2svg::EnhancedVectorData) -> usize {
+    use std::collections::HashSet;
+    let mut seen = HashSet::new();
+    for p in &data.paths {
+        seen.insert(p.color);
+    }
+    seen.len()
+}
+
+fn format_label(format: EnhancedOutputFormat) -> &'static str {
+    match format {
+        EnhancedOutputFormat::Eps => "eps",
+        EnhancedOutputFormat::Pdf => "pdf",
+        EnhancedOutputFormat::Ai => "ai",
+        EnhancedOutputFormat::Svg => "svg",
+    }
+}
+
+struct ConvertToolArgs {
+    num_colors: usize,
+    smooth_level: u8,
+    threshold: f64,
+    preprocess: bool,
+    legacy: bool,
+    centerline: bool,
+    logo_mode: bool,
+    superpixel: bool,
+    optimize_corners: bool,
+    min_region_area: usize,
+    preset: Option<Preset>,
+    output_format: EnhancedOutputFormat,
+    max_size: u32,
+    progress_token: Option<String>,
+    num_colors_explicit: bool,
+    preprocess_explicit: bool,
+}
+
+impl ConvertToolArgs {
+    fn parse(args: &Map<String, Value>, output_path: Option<&str>) -> Self {
+        let num_colors_explicit = args.contains_key("num_colors");
+        let preprocess_explicit = args.contains_key("preprocess");
+        let output_format = args
+            .get("output_format")
+            .and_then(|v| v.as_str())
+            .map(|s| match s.to_lowercase().as_str() {
+                "eps" => EnhancedOutputFormat::Eps,
+                "pdf" => EnhancedOutputFormat::Pdf,
+                "ai" => EnhancedOutputFormat::Ai,
+                _ => EnhancedOutputFormat::Svg,
+            })
+            .unwrap_or_else(|| {
+                output_path
+                    .map(Path::new)
+                    .map(EnhancedOutputFormat::from_path)
+                    .unwrap_or(EnhancedOutputFormat::Svg)
+            });
+
+        Self {
+            num_colors: args
+                .get("num_colors")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(16) as usize,
+            smooth_level: args
+                .get("smooth_level")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(5) as u8,
+            threshold: args
+                .get("threshold")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.1),
+            preprocess: args
+                .get("preprocess")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            legacy: args.get("legacy").and_then(|v| v.as_bool()).unwrap_or(false),
+            centerline: args
+                .get("centerline")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            logo_mode: args
+                .get("logo_mode")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            superpixel: args
+                .get("superpixel")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            optimize_corners: args
+                .get("optimize_corners")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            min_region_area: args
+                .get("min_region_area")
+                .and_then(|v| v.as_i64())
+                .map(|v| v.max(0) as usize)
+                .unwrap_or(20),
+            preset: args
+                .get("preset")
+                .and_then(|v| v.as_str())
+                .and_then(Preset::parse),
+            output_format,
+            max_size: args
+                .get("max_size")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(4096) as u32,
+            progress_token: args
+                .get("progress_token")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
+            num_colors_explicit,
+            preprocess_explicit,
+        }
+    }
+
+    fn enhanced_options(&self) -> EnhancedOptions {
+        let mut opts = EnhancedOptions {
+            num_colors: self.num_colors,
+            preprocess: self.preprocess,
+            centerline: self.centerline,
+            logo_mode: self.logo_mode,
+            use_superpixel: self.superpixel,
+            optimize_corners: self.optimize_corners,
+            min_region_area: self.min_region_area,
+            ..Default::default()
+        };
+        if let Some(p) = self.preset {
+            p.apply(&mut opts);
+            if self.logo_mode {
+                opts.logo_mode = true;
+            }
+            if self.preprocess_explicit {
+                opts.preprocess = self.preprocess;
+            }
+            if self.num_colors_explicit {
+                opts.num_colors = self.num_colors;
+            }
+        }
+        opts
+    }
+}
+
+fn run_single_conversion(
+    input: &str,
+    output: &str,
+    params: &ConvertToolArgs,
+    notify: &dyn Fn(f64, f64),
+) -> Result<ConversionInfo, String> {
+    if params.legacy {
+        notify(0.0, 100.0);
+        let image_data = load_image(Path::new(input)).map_err(|e| format!("Image load failed: {}", e))?;
+        notify(25.0, 100.0);
+        let image_data = resize_if_needed(image_data, params.max_size);
+        notify(50.0, 100.0);
+        let vectorized_data = vectorize(
+            &image_data,
+            params.num_colors,
+            params.threshold,
+            params.smooth_level,
+            false,
+        )
+        .map_err(|e| format!("Vectorization failed: {}", e))?;
+        notify(75.0, 100.0);
+        generate_svg(&vectorized_data, Path::new(output))
+            .map_err(|e| format!("SVG write failed: {}", e))?;
+        notify(100.0, 100.0);
+        return Ok(ConversionInfo {
+            width: image_data.width,
+            height: image_data.height,
+            colors_used: vectorized_data.curves.len(),
+            pipeline: "legacy",
+            output_format: "svg",
+        });
+    }
+
+    notify(0.0, 100.0);
+    let image_data = load_image(Path::new(input)).map_err(|e| format!("Image load failed: {}", e))?;
+    notify(20.0, 100.0);
+    let image_data = resize_if_needed(image_data, params.max_size);
+    notify(40.0, 100.0);
+    let opts = params.enhanced_options();
+    let data = convert_enhanced_data(
+        &image_data,
+        Path::new(output),
+        &opts,
+        Some(params.output_format),
+    )
+    .map_err(|e| format!("Conversion failed: {}", e))?;
+    notify(100.0, 100.0);
+    Ok(ConversionInfo {
+        width: data.width,
+        height: data.height,
+        colors_used: count_unique_path_colors(&data),
+        pipeline: "enhanced",
+        output_format: format_label(params.output_format),
+    })
+}
+
+fn shared_convert_properties() -> Value {
+    json!({
+        "num_colors": {
+            "type": "integer",
+            "description": "Number of colors for quantization (1-64, default: 16).",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 16
+        },
+        "preprocess": {
+            "type": "boolean",
+            "description": "Apply edge-preserving smoothing and color reduction before vectorization. Default: true.",
+            "default": true
+        },
+        "legacy": {
+            "type": "boolean",
+            "description": "Use legacy pipeline (median-cut, RDP, line segments) instead of enhanced Bézier.",
+            "default": false
+        },
+        "smooth_level": {
+            "type": "integer",
+            "description": "Path smoothing level (0-10, default: 5). Legacy pipeline only.",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 5
+        },
+        "threshold": {
+            "type": "number",
+            "description": "Edge detection threshold (0.0-1.0, default: 0.1). Legacy pipeline only.",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "default": 0.1
+        },
+        "preset": {
+            "type": "string",
+            "enum": ["logo", "photo", "icon"],
+            "description": "Tuned parameter bundle (logo enables logo_mode; photo enables preprocess)"
+        },
+        "centerline": {
+            "type": "boolean",
+            "description": "Centerline/stroke tracing for line art (enhanced only)",
+            "default": false
+        },
+        "logo_mode": {
+            "type": "boolean",
+            "description": "Separate fill regions and outline strokes (enhanced only)",
+            "default": false
+        },
+        "superpixel": {
+            "type": "boolean",
+            "description": "Use SLIC superpixel segmentation instead of k-means quantization",
+            "default": false
+        },
+        "optimize_corners": {
+            "type": "boolean",
+            "description": "Potrace-style Bézier corner optimization pass",
+            "default": false
+        },
+        "min_region_area": {
+            "type": "integer",
+            "description": "Despeckle: merge connected regions smaller than this (pixels). 0 = off. Default: 20.",
+            "minimum": 0,
+            "default": 20
+        },
+        "output_format": {
+            "type": "string",
+            "enum": ["svg", "eps", "pdf", "ai"],
+            "description": "Output format (default: svg, or inferred from output path extension)",
+            "default": "svg"
+        },
+        "max_size": {
+            "type": "integer",
+            "description": "Maximum image dimension in pixels (auto-resize with Lanczos3). Default: 4096.",
+            "minimum": 64,
+            "maximum": 16384,
+            "default": 4096
+        },
+        "progress_token": {
+            "type": "string",
+            "description": "Token for receiving real-time progress notifications during conversion."
+        }
+    })
 }
 
 struct Img2SvgMcpServer;
@@ -106,6 +424,7 @@ impl Img2SvgMcpServer {
     }
 
     fn handle_tools_list(&self, id: Value) -> McpResponse {
+        let shared = shared_convert_properties();
         McpResponse {
             jsonrpc: "2.0".to_string(),
             id,
@@ -113,57 +432,63 @@ impl Img2SvgMcpServer {
                 "tools": [
                     {
                         "name": "convert_image_to_svg",
-                        "description": "Convert a raster image (PNG, JPEG, etc.) to SVG format. This tool transforms pixel-based images into scalable vector graphics using color quantization, marching squares contour tracing, and path simplification algorithms.",
+                        "description": "Convert a raster image (PNG, JPEG, etc.) to vector format. Default pipeline uses edge-aware quantization, marching squares, and cubic Bézier curves.",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
                                 "input_path": {
                                     "type": "string",
-                                    "description": "Path to the input image file (PNG, JPEG, etc.)"
+                                    "description": "Path to the input image file"
                                 },
                                 "output_path": {
                                     "type": "string",
-                                    "description": "Path where the SVG output will be saved"
+                                    "description": "Path where vector output will be saved"
                                 },
-                                "num_colors": {
-                                    "type": "integer",
-                                    "description": "Number of colors for quantization (1-64, default: 16). More colors preserve more detail but increase file size.",
-                                    "minimum": 1,
-                                    "maximum": 64,
-                                    "default": 16
-                                },
-                                "smooth_level": {
-                                    "type": "integer",
-                                    "description": "Path smoothing level (0-10, default: 5). Higher values create smoother curves but may lose sharp details.",
-                                    "minimum": 0,
-                                    "maximum": 10,
-                                    "default": 5
-                                },
-                                "threshold": {
-                                    "type": "number",
-                                    "description": "Edge detection threshold (0.0-1.0, default: 0.1). Lower values detect more edges.",
-                                    "minimum": 0.0,
-                                    "maximum": 1.0,
-                                    "default": 0.1
-                                },
-                                "preprocess": {
-                                    "type": "boolean",
-                                    "description": "Apply edge-preserving smoothing and color reduction before vectorization. Uses the enhanced Bézier pipeline when enabled.",
-                                    "default": false
-                                },
-                                "max_size": {
-                                    "type": "integer",
-                                    "description": "Maximum image dimension in pixels. Images larger than this will be auto-resized (Lanczos3) to prevent OOM. Default: 4096.",
-                                    "minimum": 64,
-                                    "maximum": 16384,
-                                    "default": 4096
-                                },
-                                "progress_token": {
-                                    "type": "string",
-                                    "description": "Token for receiving real-time progress notifications during conversion."
-                                }
+                                "num_colors": shared["num_colors"],
+                                "preprocess": shared["preprocess"],
+                                "legacy": shared["legacy"],
+                                "smooth_level": shared["smooth_level"],
+                                "threshold": shared["threshold"],
+                                "preset": shared["preset"],
+                                "centerline": shared["centerline"],
+                                "logo_mode": shared["logo_mode"],
+                                "superpixel": shared["superpixel"],
+                                "optimize_corners": shared["optimize_corners"],
+                                "min_region_area": shared["min_region_area"],
+                                "output_format": shared["output_format"],
+                                "max_size": shared["max_size"],
+                                "progress_token": shared["progress_token"]
                             },
                             "required": ["input_path", "output_path"]
+                        }
+                    },
+                    {
+                        "name": "convert_image_directory",
+                        "description": "Batch convert all supported images in a directory to vector files (matches CLI batch mode). Enhanced pipeline by default; legacy not supported in batch.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "input_dir": {
+                                    "type": "string",
+                                    "description": "Directory containing input images"
+                                },
+                                "output_dir": {
+                                    "type": "string",
+                                    "description": "Directory where vector outputs will be written"
+                                },
+                                "num_colors": shared["num_colors"],
+                                "preprocess": shared["preprocess"],
+                                "preset": shared["preset"],
+                                "centerline": shared["centerline"],
+                                "logo_mode": shared["logo_mode"],
+                                "superpixel": shared["superpixel"],
+                                "optimize_corners": shared["optimize_corners"],
+                                "min_region_area": shared["min_region_area"],
+                                "output_format": shared["output_format"],
+                                "max_size": shared["max_size"],
+                                "progress_token": shared["progress_token"]
+                            },
+                            "required": ["input_dir", "output_dir"]
                         }
                     }
                 ]
@@ -173,35 +498,31 @@ impl Img2SvgMcpServer {
     }
 
     fn handle_tools_call(&self, params: ToolCallParams, id: Value) -> McpResponse {
+        let args = if let Value::Object(map) = params.arguments {
+            map
+        } else {
+            return McpResponse {
+                jsonrpc: "2.0".to_string(),
+                id,
+                result: None,
+                error: Some(McpError {
+                    code: -32602,
+                    message: "Invalid arguments: expected object".to_string(),
+                }),
+            };
+        };
+
         match params.name.as_str() {
             "convert_image_to_svg" => {
-                let args = if let Value::Object(map) = params.arguments {
-                    map
-                } else {
-                    return McpResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id,
-                        result: None,
-                        error: Some(McpError {
-                            code: -32602,
-                            message: "Invalid arguments: expected object".to_string(),
-                        }),
-                    };
-                };
-
                 let input_path = args.get("input_path").and_then(|v| v.as_str());
                 let output_path = args.get("output_path").and_then(|v| v.as_str());
-                let num_colors = args.get("num_colors").and_then(|v| v.as_i64()).unwrap_or(16) as usize;
-                let smooth_level = args.get("smooth_level").and_then(|v| v.as_i64()).unwrap_or(5) as u8;
-                let threshold = args.get("threshold").and_then(|v| v.as_f64()).unwrap_or(0.1);
-                let preprocess = args.get("preprocess").and_then(|v| v.as_bool()).unwrap_or(false);
-                let max_size = args.get("max_size").and_then(|v| v.as_i64()).unwrap_or(4096) as u32;
-                let progress_token = args.get("progress_token").and_then(|v| v.as_str());
 
                 match (input_path, output_path) {
                     (Some(input), Some(output)) => {
-                        let mut notify = |stage: f64, total: f64| {
-                            if let Some(token) = progress_token {
+                        let tool_args = ConvertToolArgs::parse(&args, Some(output));
+                        let progress_token = tool_args.progress_token.clone();
+                        let notify = |stage: f64, total: f64| {
+                            if let Some(ref token) = progress_token {
                                 let _ = send_progress_notification(
                                     &mut io::stdout(),
                                     token,
@@ -211,71 +532,7 @@ impl Img2SvgMcpServer {
                             }
                         };
 
-                        let result = if preprocess {
-                            notify(0.0, 100.0);
-                            match load_image(Path::new(input)) {
-                                Ok(image_data) => {
-                                    notify(20.0, 100.0);
-                                    let image_data = resize_if_needed(image_data, max_size);
-                                    notify(40.0, 100.0);
-                                    let opts = EnhancedOptions {
-                                        num_colors,
-                                        preprocess: true,
-                                        ..Default::default()
-                                    };
-                                    match vectorize_enhanced(&image_data, &opts) {
-                                        Ok(data) => {
-                                            notify(70.0, 100.0);
-                                            let info = ConversionInfo {
-                                                width: data.width,
-                                                height: data.height,
-                                                colors_used: data.paths.len(),
-                                                pipeline: "enhanced",
-                                            };
-                                            match write_enhanced_svg(&data, Path::new(output)) {
-                                                Ok(()) => {
-                                                    notify(100.0, 100.0);
-                                                    Ok(info)
-                                                }
-                                                Err(e) => Err(format!("SVG write failed: {}", e)),
-                                            }
-                                        }
-                                        Err(e) => Err(format!("Vectorization failed: {}", e)),
-                                    }
-                                }
-                                Err(e) => Err(format!("Image load failed: {}", e)),
-                            }
-                        } else {
-                            notify(0.0, 100.0);
-                            match load_image(Path::new(input)) {
-                                Ok(image_data) => {
-                                    notify(25.0, 100.0);
-                                    let image_data = resize_if_needed(image_data, max_size);
-                                    notify(50.0, 100.0);
-                                    match vectorize(&image_data, num_colors, threshold, smooth_level, false) {
-                                        Ok(vectorized_data) => {
-                                            notify(75.0, 100.0);
-                                            match generate_svg(&vectorized_data, Path::new(output)) {
-                                                Ok(()) => {
-                                                    notify(100.0, 100.0);
-                                                    Ok(ConversionInfo {
-                                                        width: image_data.width,
-                                                        height: image_data.height,
-                                                        colors_used: vectorized_data.curves.len(),
-                                                        pipeline: "legacy",
-                                                    })
-                                                }
-                                                Err(e) => Err(format!("SVG write failed: {}", e)),
-                                            }
-                                        }
-                                        Err(e) => Err(format!("Vectorization failed: {}", e)),
-                                    }
-                                }
-                                Err(e) => Err(format!("Image load failed: {}", e)),
-                            }
-                        };
-
-                        match result {
+                        match run_single_conversion(input, output, &tool_args, &notify) {
                             Ok(info) => {
                                 let output_size = std::fs::metadata(output)
                                     .map(|m| m.len())
@@ -284,14 +541,13 @@ impl Img2SvgMcpServer {
                                     jsonrpc: "2.0".to_string(),
                                     id,
                                     result: Some(json!({
-                                        "content": [
-                                            {
-                                                "type": "text",
-                                                "text": format!("Successfully converted {} to {}", input, output)
-                                            }
-                                        ],
+                                        "content": [{
+                                            "type": "text",
+                                            "text": format!("Successfully converted {} to {}", input, output)
+                                        }],
                                         "details": {
                                             "pipeline": info.pipeline,
+                                            "output_format": info.output_format,
                                             "output_size_bytes": output_size,
                                             "width": if info.width > 0 { Some(info.width) } else { None::<u32> },
                                             "height": if info.height > 0 { Some(info.height) } else { None::<u32> },
@@ -319,6 +575,101 @@ impl Img2SvgMcpServer {
                         error: Some(McpError {
                             code: -32602,
                             message: "Missing required parameters: input_path and output_path".to_string(),
+                        }),
+                    },
+                }
+            }
+            "convert_image_directory" => {
+                let input_dir = args.get("input_dir").and_then(|v| v.as_str());
+                let output_dir = args.get("output_dir").and_then(|v| v.as_str());
+
+                match (input_dir, output_dir) {
+                    (Some(input), Some(output)) => {
+                        if args.get("legacy").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            return McpResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(McpError {
+                                    code: -32602,
+                                    message: "Legacy pipeline is not supported for batch conversion".to_string(),
+                                }),
+                            };
+                        }
+
+                        let tool_args = ConvertToolArgs::parse(&args, None);
+                        let progress_token = tool_args.progress_token.clone();
+                        let opts = tool_args.enhanced_options();
+
+                        match batch_convert_enhanced(
+                            Path::new(input),
+                            Path::new(output),
+                            &opts,
+                            tool_args.output_format,
+                            tool_args.max_size,
+                        ) {
+                            Ok(summary) => {
+                                if let Some(ref token) = progress_token {
+                                    let _ = send_progress_notification(
+                                        &mut io::stdout(),
+                                        token,
+                                        summary.converted as f64,
+                                        summary.total.max(1) as f64,
+                                    );
+                                }
+                                let files: Vec<Value> = summary
+                                    .entries
+                                    .iter()
+                                    .map(|e| {
+                                        json!({
+                                            "input": e.input.to_string_lossy(),
+                                            "output": e.output.to_string_lossy(),
+                                            "success": e.success,
+                                            "error": e.error
+                                        })
+                                    })
+                                    .collect();
+                                McpResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id,
+                                    result: Some(json!({
+                                        "content": [{
+                                            "type": "text",
+                                            "text": format!(
+                                                "Batch complete: {} converted, {} errors (of {} images)",
+                                                summary.converted, summary.errors, summary.total
+                                            )
+                                        }],
+                                        "details": {
+                                            "pipeline": "enhanced",
+                                            "output_format": format_label(tool_args.output_format),
+                                            "total": summary.total,
+                                            "converted": summary.converted,
+                                            "errors": summary.errors,
+                                            "files": files
+                                        }
+                                    })),
+                                    error: None,
+                                }
+                            }
+                            Err(e) => McpResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(McpError {
+                                    code: -32000,
+                                    message: format!("Batch conversion failed: {}", e),
+                                }),
+                            },
+                        }
+                    }
+                    _ => McpResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: None,
+                        error: Some(McpError {
+                            code: -32602,
+                            message: "Missing required parameters: input_dir and output_dir".to_string(),
                         }),
                     },
                 }
@@ -386,8 +737,13 @@ mod tests {
         assert!(r.error.is_none());
         let body = r.result.unwrap();
         let tools = body["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 1);
+        assert_eq!(tools.len(), 2);
         assert_eq!(tools[0]["name"], "convert_image_to_svg");
+        assert_eq!(tools[1]["name"], "convert_image_directory");
+        let props = tools[0]["inputSchema"]["properties"].as_object().unwrap();
+        assert!(props.contains_key("legacy"));
+        assert!(props.contains_key("preset"));
+        assert!(props.contains_key("centerline"));
         let required = tools[0]["inputSchema"]["required"]
             .as_array()
             .expect("required");
@@ -437,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_call_convert_succeeds_for_example_png() {
+    fn tools_call_convert_defaults_to_enhanced_pipeline() {
         let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
         if !input.exists() {
             return;
@@ -453,6 +809,7 @@ mod tests {
                     "input_path": input.to_str().unwrap(),
                     "output_path": out.to_str().unwrap(),
                     "num_colors": 8,
+                    "preprocess": false,
                 }),
             },
             json!(99),
@@ -462,21 +819,20 @@ mod tests {
         assert!(out.exists());
         let text = std::fs::read_to_string(&out).expect("read output");
         assert!(text.contains("<svg"));
-        // Check details field is present
         let res = r.result.unwrap();
-        assert!(res["details"].is_object());
-        assert_eq!(res["details"]["pipeline"], "legacy");
+        assert_eq!(res["details"]["pipeline"], "enhanced");
+        assert_eq!(res["details"]["output_format"], "svg");
         assert!(res["details"]["output_size_bytes"].as_u64().unwrap_or(0) > 0);
         let _ = std::fs::remove_file(&out);
     }
 
     #[test]
-    fn tools_call_convert_with_preprocess_uses_enhanced_pipeline() {
+    fn tools_call_convert_legacy_pipeline() {
         let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
         if !input.exists() {
             return;
         }
-        let out = std::env::temp_dir().join("img2svg_mcp_preprocess_test.svg");
+        let out = std::env::temp_dir().join("img2svg_mcp_legacy_test.svg");
         let _ = std::fs::remove_file(&out);
 
         let s = Img2SvgMcpServer;
@@ -487,22 +843,77 @@ mod tests {
                     "input_path": input.to_str().unwrap(),
                     "output_path": out.to_str().unwrap(),
                     "num_colors": 8,
-                    "preprocess": true,
+                    "legacy": true,
                 }),
             },
             json!(100),
         );
 
         assert!(r.error.is_none(), "{:?}", r.error);
+        let res = r.result.unwrap();
+        assert_eq!(res["details"]["pipeline"], "legacy");
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_convert_with_preset_logo() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/logo.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_preset_logo.svg");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "preset": "logo",
+                }),
+            },
+            json!(101),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
         assert!(out.exists());
-        let text = std::fs::read_to_string(&out).expect("read output");
-        assert!(text.contains("<svg"));
-        // Check enhanced pipeline was used
         let res = r.result.unwrap();
         assert_eq!(res["details"]["pipeline"], "enhanced");
-        assert!(res["details"]["width"].is_number());
-        assert!(res["details"]["height"].is_number());
-        assert!(res["details"]["colors_used"].is_number());
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_convert_eps_output() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_eps_test.eps");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                    "preprocess": false,
+                    "output_format": "eps",
+                }),
+            },
+            json!(102),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let text = std::fs::read_to_string(&out).expect("read eps");
+        assert!(text.contains("%!PS-Adobe"));
+        let res = r.result.unwrap();
+        assert_eq!(res["details"]["output_format"], "eps");
         let _ = std::fs::remove_file(&out);
     }
 
@@ -536,10 +947,11 @@ mod tests {
                     "input_path": input.to_str().unwrap(),
                     "output_path": out.to_str().unwrap(),
                     "num_colors": 8,
+                    "preprocess": false,
                     "progress_token": "test-token-42",
                 }),
             },
-            json!(102),
+            json!(103),
         );
 
         assert!(r.error.is_none(), "{:?}", r.error);
@@ -564,10 +976,11 @@ mod tests {
                     "input_path": input.to_str().unwrap(),
                     "output_path": out.to_str().unwrap(),
                     "num_colors": 8,
+                    "preprocess": false,
                     "max_size": 32,
                 }),
             },
-            json!(101),
+            json!(104),
         );
 
         assert!(r.error.is_none(), "{:?}", r.error);
@@ -584,4 +997,50 @@ mod tests {
         let _ = std::fs::remove_file(&out);
     }
 
+    #[test]
+    fn tools_call_batch_directory_converts_examples() {
+        let input_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input");
+        if !input_dir.exists() {
+            return;
+        }
+        let output_dir = std::env::temp_dir().join("img2svg_mcp_batch_test");
+        let _ = std::fs::remove_dir_all(&output_dir);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_directory".to_string(),
+                arguments: json!({
+                    "input_dir": input_dir.to_str().unwrap(),
+                    "output_dir": output_dir.to_str().unwrap(),
+                    "num_colors": 8,
+                    "preprocess": false,
+                }),
+            },
+            json!(105),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        let res = r.result.unwrap();
+        assert!(res["details"]["converted"].as_u64().unwrap_or(0) >= 2);
+        assert_eq!(res["details"]["pipeline"], "enhanced");
+        let _ = std::fs::remove_dir_all(&output_dir);
+    }
+
+    #[test]
+    fn tools_call_batch_rejects_legacy() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_directory".to_string(),
+                arguments: json!({
+                    "input_dir": "/tmp/in",
+                    "output_dir": "/tmp/out",
+                    "legacy": true,
+                }),
+            },
+            json!(106),
+        );
+        assert_eq!(r.error.unwrap().code, -32602);
+    }
 }

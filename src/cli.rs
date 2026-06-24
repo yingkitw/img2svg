@@ -111,6 +111,14 @@ pub struct Cli {
     #[arg(long)]
     pub logo_mode: bool,
 
+    /// Minimum connected region area in pixels; smaller islands are merged (Potrace turdsize). Set to 0 or use --no-despeckle to disable.
+    #[arg(long, default_value = "20")]
+    pub min_region_area: usize,
+
+    /// Disable despeckle pass (equivalent to --min-region-area 0)
+    #[arg(long)]
+    pub no_despeckle: bool,
+
     /// Generate HTML parameter comparison grid instead of converting
     #[arg(long)]
     pub tune: bool,

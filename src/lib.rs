@@ -34,6 +34,8 @@ pub mod edge_detector;
 pub mod enhanced_quantizer;
 /// Enhanced vectorization pipeline: marching squares → Bézier curves.
 pub mod enhanced_vectorizer;
+/// Potrace-style despeckle: remove small color islands before contour extraction.
+pub mod despeckle;
 /// Centerline tracing for line art mode.
 pub mod centerline_tracer;
 /// EPS/PDF/AI vector export.
@@ -81,7 +83,8 @@ pub use image_filters::{
     SepiaFilter, SmartThreshold, UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
 };
 pub use eps_generator::{
-    write_enhanced_ai, write_enhanced_eps, write_enhanced_pdf, write_vectorized_eps,
+    write_enhanced_ai, write_enhanced_eps, write_enhanced_output, write_enhanced_pdf,
+    write_vectorized_eps, EnhancedOutputFormat,
 };
 /// Re-export image loading and quantization functions.
 pub use image_processor::{
@@ -89,7 +92,7 @@ pub use image_processor::{
     quantize_colors, ColorSpace, GifFrame, ImageData,
 };
 /// Re-export photo preprocessing functions.
-pub use preprocessor::{preprocess, PreprocessOptions};
+pub use despeckle::despeckle;
 /// Re-export SVG generation functions.
 pub use svg_generator::{
     generate_svg, generate_svg_advanced, generate_svg_to, write_multi_path_to, write_subpath_to,
@@ -220,6 +223,162 @@ pub fn convert_animated_gif(
     Ok((svgs, delays))
 }
 
+/// Check whether a file path has a supported raster image extension.
+pub fn is_supported_image(path: &std::path::Path) -> bool {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        matches!(
+            ext.to_lowercase().as_str(),
+            "bmp" | "png" | "jpg" | "jpeg" | "gif" | "ico" | "tiff" | "tif" | "webp" | "pnm"
+                | "tga" | "dds" | "farbfeld"
+        )
+    } else {
+        false
+    }
+}
+
+/// Result of converting one file in a batch run.
+#[derive(Debug, Clone)]
+pub struct BatchConvertEntry {
+    pub input: std::path::PathBuf,
+    pub output: std::path::PathBuf,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// Summary of a batch directory conversion.
+#[derive(Debug, Clone)]
+pub struct BatchConvertSummary {
+    pub total: usize,
+    pub converted: usize,
+    pub errors: usize,
+    pub entries: Vec<BatchConvertEntry>,
+}
+
+/// Convert all supported images in `input_dir` to vector files in `output_dir`.
+///
+/// Matches CLI batch mode (`img2svg -i dir/ -o out/`). Creates `output_dir` if missing.
+pub fn batch_convert_enhanced(
+    input_dir: &std::path::Path,
+    output_dir: &std::path::Path,
+    options: &EnhancedOptions,
+    format: EnhancedOutputFormat,
+    max_size: u32,
+) -> Result<BatchConvertSummary> {
+    std::fs::create_dir_all(output_dir)?;
+
+    let entries: Vec<_> = std::fs::read_dir(input_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file() && is_supported_image(&e.path()))
+        .collect();
+
+    let total = entries.len();
+    let mut converted = 0usize;
+    let mut errors = 0usize;
+    let mut results = Vec::with_capacity(total);
+
+    for entry in entries {
+        let input_path = entry.path();
+        let stem = input_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let mut output_path = output_dir.join(&stem);
+        output_path.set_extension(format.extension());
+
+        let outcome = (|| -> Result<()> {
+            let image_data = load_image(&input_path)?;
+            let image_data = image_processor::resize_if_needed(image_data, max_size);
+            convert_enhanced_data(&image_data, &output_path, options, Some(format))?;
+            Ok(())
+        })();
+
+        match outcome {
+            Ok(()) => {
+                converted += 1;
+                results.push(BatchConvertEntry {
+                    input: input_path,
+                    output: output_path,
+                    success: true,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                errors += 1;
+                results.push(BatchConvertEntry {
+                    input: input_path,
+                    output: output_path,
+                    success: false,
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    Ok(BatchConvertSummary {
+        total,
+        converted,
+        errors,
+        entries: results,
+    })
+}
+
+/// Convert in-memory image data with the enhanced Bézier pipeline.
+///
+/// Output format defaults to the `output_path` extension (`.svg` default).
+/// Pass `format` to override (e.g. write EPS to a path ending in `.svg`).
+/// Returns vectorization metadata after writing the output file.
+pub fn convert_enhanced_data(
+    image_data: &ImageData,
+    output_path: &std::path::Path,
+    options: &EnhancedOptions,
+    format: Option<EnhancedOutputFormat>,
+) -> Result<EnhancedVectorData> {
+    let fmt = format.unwrap_or_else(|| EnhancedOutputFormat::from_path(output_path));
+    let data = vectorize_enhanced(image_data, options)?;
+    write_enhanced_output(&data, output_path, fmt)?;
+    Ok(data)
+}
+
+/// Convert an image file with the enhanced Bézier pipeline (CLI default).
+///
+/// This is the high-level counterpart to [`convert`] for the default pipeline.
+/// Output format is inferred from `output_path` extension (`.svg` default).
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use img2svg::{convert_enhanced, EnhancedOptions};
+/// use std::path::Path;
+///
+/// let options = EnhancedOptions {
+///     num_colors: 16,
+///     ..Default::default()
+/// };
+/// convert_enhanced(Path::new("input.png"), Path::new("output.svg"), &options)?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn convert_enhanced(
+    input_path: &std::path::Path,
+    output_path: &std::path::Path,
+    options: &EnhancedOptions,
+) -> Result<()> {
+    let image_data = load_image(input_path)?;
+    convert_enhanced_data(&image_data, output_path, options, None)?;
+    Ok(())
+}
+
+/// Convert in-memory image data to an enhanced SVG string.
+///
+/// Same pipeline as [`convert_enhanced`] but returns SVG markup instead of writing a file.
+pub fn convert_enhanced_to_svg_string(
+    image_data: &ImageData,
+    options: &EnhancedOptions,
+) -> Result<String> {
+    let data = vectorize_enhanced(image_data, options)?;
+    Ok(generate_enhanced_svg(&data))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +391,33 @@ mod tests {
         assert_eq!(options.smooth_level, 5);
         assert!(!options.hierarchical);
         assert!(!options.advanced);
+    }
+
+    #[test]
+    fn test_is_supported_image() {
+        assert!(is_supported_image(std::path::Path::new("a.png")));
+        assert!(is_supported_image(std::path::Path::new("a.JPG")));
+        assert!(!is_supported_image(std::path::Path::new("readme.txt")));
+    }
+
+    #[test]
+    fn test_convert_enhanced_to_svg_string() {
+        let mut pixels = Vec::new();
+        for _ in 0..(20 * 20) {
+            pixels.push(rgb::RGBA8::new(200, 50, 50, 255));
+        }
+        let image = ImageData {
+            width: 20,
+            height: 20,
+            pixels,
+        };
+        let opts = EnhancedOptions {
+            num_colors: 4,
+            preprocess: false,
+            ..Default::default()
+        };
+        let svg = convert_enhanced_to_svg_string(&image, &opts).expect("convert");
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("<path") || svg.contains("<rect"));
     }
 }

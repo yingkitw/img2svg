@@ -1,7 +1,7 @@
 //! EPS and minimal PDF export from vector data.
 
 use crate::bezier_fitter::{bezier_to_svg_path_to, BezierCurve};
-use crate::enhanced_vectorizer::EnhancedVectorData;
+use crate::enhanced_vectorizer::{write_enhanced_svg, EnhancedVectorData};
 use crate::image_processor::Result;
 use crate::svg_generator::color_with_alpha;
 use crate::vectorizer::{Point, VectorizedData};
@@ -213,6 +213,54 @@ pub fn write_enhanced_pdf(data: &EnhancedVectorData, output_path: &Path) -> Resu
 /// Write enhanced data as Adobe Illustrator-compatible EPS (.ai).
 pub fn write_enhanced_ai(data: &EnhancedVectorData, output_path: &Path) -> Result<()> {
     write_enhanced_eps(data, output_path)
+}
+
+/// Output format for enhanced pipeline file writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnhancedOutputFormat {
+    #[default]
+    Svg,
+    Eps,
+    Pdf,
+    Ai,
+}
+
+impl EnhancedOutputFormat {
+    /// Infer format from a file path extension (`svg` default).
+    pub fn from_path(path: &Path) -> Self {
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+        {
+            Some(ext) if ext == "eps" => Self::Eps,
+            Some(ext) if ext == "pdf" => Self::Pdf,
+            Some(ext) if ext == "ai" => Self::Ai,
+            _ => Self::Svg,
+        }
+    }
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Svg => "svg",
+            Self::Eps => "eps",
+            Self::Pdf => "pdf",
+            Self::Ai => "ai",
+        }
+    }
+}
+
+/// Write enhanced vector data using the requested output format.
+pub fn write_enhanced_output(
+    data: &EnhancedVectorData,
+    output_path: &Path,
+    format: EnhancedOutputFormat,
+) -> Result<()> {
+    match format {
+        EnhancedOutputFormat::Svg => write_enhanced_svg(data, output_path),
+        EnhancedOutputFormat::Eps => write_enhanced_eps(data, output_path),
+        EnhancedOutputFormat::Pdf => write_enhanced_pdf(data, output_path),
+        EnhancedOutputFormat::Ai => write_enhanced_ai(data, output_path),
+    }
 }
 
 fn parse_hex(hex: &str) -> (f64, f64, f64) {

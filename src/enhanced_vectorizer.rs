@@ -8,6 +8,7 @@
 //! The original marching-squares pipeline is preserved in vectorizer.rs for comparison.
 
 use crate::bezier_fitter::{bezier_to_svg_path_to, optimize_bezier_corners, BezierCurve, BezierFitter};
+use crate::despeckle::despeckle;
 use crate::edge_detector::detect_edges_sobel;
 use crate::enhanced_quantizer::{
     adaptive_color_count, count_distinct_colors, quantize_edge_aware, quantize_superpixel,
@@ -152,7 +153,7 @@ pub fn vectorize_enhanced(
     } else {
         options.smoothing_passes
     };
-    let (quantized, _indices, _palette) = if options.use_superpixel {
+    let (mut quantized, _indices, _palette) = if options.use_superpixel {
         quantize_superpixel(&preprocessed, target_colors)
     } else {
         quantize_edge_aware(
@@ -163,6 +164,14 @@ pub fn vectorize_enhanced(
             smooth_passes,
         )
     };
+
+    if options.min_region_area > 1 {
+        eprintln!(
+            "    Despeckle: removing regions smaller than {} px...",
+            options.min_region_area
+        );
+        quantized = despeckle(&quantized, options.min_region_area);
+    }
 
     // Group pixels by quantized color for region assignment
     let mut color_pixels: HashMap<(u8, u8, u8, u8), Vec<(usize, usize)>> = HashMap::new();
@@ -227,8 +236,8 @@ pub fn vectorize_enhanced(
     } else {
         options.simplification_tolerance
     };
-    // Minimum polygon area: larger for photos to skip tiny noise regions
-    let min_poly_area = if is_many_colors { 20.0 } else { 8.0 };
+    // Minimum polygon area from options (Potrace turdsize equivalent)
+    let min_poly_area = options.min_region_area.max(1) as f64;
 
     eprintln!("    Extracting contours for {} colors (bg excluded)...", color_list.len().saturating_sub(1));
 

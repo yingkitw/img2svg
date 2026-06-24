@@ -1,7 +1,8 @@
 // Integration tests for img2svg
 use img2svg::{
-    convert, convert_to_svg_string, generate_enhanced_svg, vectorize_enhanced, write_enhanced_eps,
-    write_enhanced_svg, ConversionOptions, EnhancedOptions,
+    batch_convert_enhanced, convert, convert_enhanced, convert_enhanced_to_svg_string,
+    convert_to_svg_string, generate_enhanced_svg, vectorize_enhanced, write_enhanced_eps,
+    write_enhanced_svg, ConversionOptions, EnhancedOptions, EnhancedOutputFormat,
 };
 use img2svg::image_processor::{load_image, quantize_colors};
 use img2svg::svg_generator::{generate_svg, generate_svg_advanced};
@@ -583,4 +584,85 @@ fn test_enhanced_eps_export() {
     assert!(eps.contains("%!PS-Adobe"));
     let _ = fs::remove_file(&test_img);
     let _ = fs::remove_file(&test_eps);
+}
+
+#[test]
+fn test_convert_enhanced_file_api() {
+    let test_img = PathBuf::from("/tmp/test_convert_enhanced.png");
+    let test_svg = PathBuf::from("/tmp/test_convert_enhanced_out.svg");
+    create_test_png(&test_img, 32, 32, "circle");
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        preprocess: false,
+        ..Default::default()
+    };
+    convert_enhanced(&test_img, &test_svg, &opts).expect("convert_enhanced");
+    let svg = fs::read_to_string(&test_svg).expect("read");
+    assert!(svg.contains("<svg"));
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_svg);
+}
+
+#[test]
+fn test_convert_enhanced_to_svg_string_api() {
+    let test_img = PathBuf::from("/tmp/test_convert_enhanced_str.png");
+    create_test_png(&test_img, 24, 24, "solid");
+    let image = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 4,
+        preprocess: false,
+        ..Default::default()
+    };
+    let svg = convert_enhanced_to_svg_string(&image, &opts).expect("to string");
+    assert!(svg.contains("<svg"));
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_despeckle_integration() {
+    let test_img = PathBuf::from("/tmp/test_despeckle.png");
+    create_test_png(&test_img, 20, 20, "checkerboard");
+    let image = load_image(&test_img).expect("load");
+    let with_speckle = EnhancedOptions {
+        num_colors: 4,
+        preprocess: false,
+        min_region_area: 0,
+        ..Default::default()
+    };
+    let without_despeckle = vectorize_enhanced(&image, &with_speckle).expect("vectorize");
+    let with_despeckle = EnhancedOptions {
+        min_region_area: 50,
+        ..with_speckle
+    };
+    let despeckled = vectorize_enhanced(&image, &with_despeckle).expect("despeckle vectorize");
+    assert!(despeckled.paths.len() <= without_despeckle.paths.len());
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_batch_convert_enhanced_examples_input() {
+    let input_dir = PathBuf::from("examples/input");
+    if !input_dir.exists() {
+        return;
+    }
+    let output_dir = PathBuf::from("/tmp/img2svg_batch_test_out");
+    let _ = fs::remove_dir_all(&output_dir);
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        preprocess: false,
+        ..Default::default()
+    };
+    let summary = batch_convert_enhanced(
+        &input_dir,
+        &output_dir,
+        &opts,
+        EnhancedOutputFormat::Svg,
+        4096,
+    )
+    .expect("batch convert");
+    assert!(summary.total >= 5);
+    assert_eq!(summary.converted + summary.errors, summary.total);
+    assert!(summary.converted >= 5);
+    assert!(output_dir.join("simple.svg").exists());
+    let _ = fs::remove_dir_all(&output_dir);
 }

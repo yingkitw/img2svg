@@ -20,10 +20,12 @@
 - [x] Unit tests for image_processor (13 tests)
 - [x] Unit tests for vectorizer (35 tests)
 - [x] Unit tests for svg_generator (20 tests)
-- [x] Integration tests (25 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS**
+- [x] Integration tests (29 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS**
 - [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides (8 tests, `src/cli.rs`)
-- [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (6 tests, `src/mcp.rs`)
-- [x] Library API tests (1 test)
+- [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (14 tests, `src/mcp.rs`)
+- [x] MCP enhanced pipeline as default; `legacy`, `preset`, mode flags, and `output_format` parameters
+- [x] MCP batch tool `convert_image_directory` + library `batch_convert_enhanced()`
+- [x] Library API tests (2 tests)
 - [x] Run `cargo test` for full counts (lib + binary targets + `img2svg-mcp` + integration + doctests)
 - [x] Criterion benchmark `benches/pipeline_comparison.rs` (original vs enhanced at 128/256/512 px)
 
@@ -94,6 +96,7 @@
 - [x] SVG gradient detection module (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
 - [x] Support for animated GIF input (frame-by-frame conversion to numbered SVGs)
 - [x] Support for CMYK color space input (`cmyk_to_rgb`, `detect_color_space`, `ColorSpace`)
+- [x] Library `convert_enhanced()` / `convert_enhanced_to_svg_string()` / `convert_enhanced_data()` matching CLI default pipeline
 - [x] Superpixel segmentation as alternative to color quantization (`--superpixel`, SLIC + `quantize_superpixel`)
 - [x] Interactive parameter tuning with HTML preview grid (`--tune`, `tune::generate_tune_html`)
 - [x] Export to other vector formats (`--format eps|pdf|ai`, `eps_generator` module)
@@ -103,7 +106,8 @@
 - [x] Mean shift segmentation (`mean_shift_filter`, SLIC superpixels in `image_filters/segmentation.rs`)
 - [x] Corner optimization / curve optimization pass (`--optimize-corners`, `optimize_bezier_corners`)
 - [x] Centerline tracing mode for line art (`--centerline`, `centerline_tracer`)
-- [x] Multi-pass outline + fill separation for logos (`--logo-mode`, `logo_pipeline`)
+- [x] Batch MCP tool for directory conversion (`convert_image_directory`, `batch_convert_enhanced`)
+- [x] Despeckle / speckle suppression (`despeckle.rs`, `--min-region-area`, `--no-despeckle`)
 
 ## Pending 🚧
 
@@ -112,12 +116,16 @@
 ## Maybe / Future Considerations 💭
 
 - [ ] WebAssembly compilation for browser-based conversion
-- [ ] GUI application for interactive parameter tuning
+- [ ] GUI application for interactive parameter tuning (live `--tune` is HTML-only today)
 - [ ] Plugin system for custom color quantization algorithms
 - [ ] Machine learning-based color palette generation
 - [ ] Support for spot color (Pantone) matching
 - [ ] Layer-aware vectorization for Photoshop files
 - [ ] Vector-to-raster comparison tools
+- [ ] Multi-color hierarchical SVG layers (Inkscape-style grouped paths per color)
+- [x] Despeckle / speckle suppression pass (Potrace `-t`, `despeckle.rs`, `--min-region-area` / `--no-despeckle`)
+- [ ] Optical character recognition (OCR) text preservation in logos (vtracer)
+- [ ] Spline optimization / curve merging pass (Potrace `-O`)
 
 ### Competitive gaps (from Potrace, vtracer, Inkscape trace)
 - [x] Corner optimization / curve optimization pass (Potrace-style)

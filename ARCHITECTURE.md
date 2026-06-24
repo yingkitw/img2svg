@@ -17,10 +17,17 @@ src/
 │   ├── canny.rs            # Canny edge detector
 │   ├── color_ops.rs        # Color temperature, saturation, HSL, LAB
 │   ├── contrast.rs         # Histogram equalization, CLAHE, adaptive tone mapping
+│   ├── denoising.rs        # Non-local means, Perona-Malik anisotropic diffusion
 │   ├── effects.rs          # Emboss, edge glow, sepia, vignette
 │   ├── enhancement.rs      # Unsharp mask, Laplacian sharpen, high-boost, gamma
 │   ├── morphology.rs       # Erosion, dilation, opening, closing, top-hat
+│   ├── segmentation.rs     # Watershed, mean shift, SLIC superpixels
 │   └── thresholding.rs     # Otsu, adaptive thresholding
+├── despeckle.rs              # Potrace-style speckle / small-region removal
+├── centerline_tracer.rs      # Skeletonization + centerline polyline tracing
+├── logo_pipeline.rs        # Fill/outline layer separation for logos
+├── eps_generator.rs        # EPS/PDF/AI vector export
+├── tune.rs                 # HTML parameter comparison grid (--tune)
 ├── mcp.rs                  # MCP (Model Context Protocol) server
 ├── edge_detector.rs        # Sobel edge detection (enhanced pipeline)
 ├── enhanced_quantizer.rs   # K-means++ / k-means refinement, edge-aware quantization (enhanced)
@@ -211,15 +218,13 @@ img2svg -i input.png -o output.svg --colors 16 --smooth 5 --threshold 0.1
 
 ### Library API
 ```rust
-use img2svg::{convert, ConversionOptions};
+use img2svg::{convert_enhanced, convert, ConversionOptions, EnhancedOptions};
 
-let options = ConversionOptions {
-    num_colors: 16,
-    smooth_level: 5,
-    threshold: 0.1,
-    ..Default::default()
-};
-convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
+// Default pipeline (matches CLI without --original)
+convert_enhanced(Path::new("input.png"), Path::new("output.svg"), &EnhancedOptions::default())?;
+
+// Legacy pipeline (matches CLI --original)
+convert(Path::new("input.png"), Path::new("output.svg"), &ConversionOptions::default())?;
 ```
 
 ### MCP Server
@@ -235,11 +240,18 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 
 **Tool: `convert_image_to_svg`**
 - `input_path`, `output_path` (required)
-- `num_colors`, `smooth_level`, `threshold` (optional, legacy pipeline)
-- `preprocess` (optional): When `true`, uses the enhanced Bézier pipeline with preprocessing
+- **Default pipeline**: enhanced Bézier (matches CLI without `--original`)
+- `legacy` (optional): Use median-cut / RDP line-segment pipeline
+- `num_colors`, `preprocess`, `preset`, `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `output_format`
+- `smooth_level`, `threshold` (legacy pipeline only)
 - `max_size` (optional): Auto-resize images exceeding this dimension (default 4096) to prevent OOM
 - `progress_token` (optional): Receives real-time `notifications/progress` during conversion
-- **Response details**: Includes `pipeline`, `output_size_bytes`, `width`, `height`, `colors_used`
+- **Response details**: Includes `pipeline`, `output_format`, `output_size_bytes`, `width`, `height`, `colors_used`
+
+**Tool: `convert_image_directory`**
+- `input_dir`, `output_dir` (required)
+- Enhanced pipeline only; same optional flags as single-file convert
+- Response `details`: `total`, `converted`, `errors`, `files`
 
 ## Dependencies
 
@@ -255,7 +267,7 @@ convert(Path::new("input.png"), Path::new("output.svg"), &options)?;
 ### Test Dependencies
 - (dev-dependencies only)
 - Test images in `examples/input/`
-- 377 tests total: 193 lib + 154 bin + 10 MCP + 18 integration + 2 doctests
+- 254 tests total: 204 lib + 204 bin + 14 MCP + 28 integration + 3 doctests (some overlap between lib/bin module copies)
 
 ## Performance Characteristics
 
