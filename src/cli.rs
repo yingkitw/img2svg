@@ -127,6 +127,14 @@ pub struct Cli {
     #[arg(long)]
     pub tune: bool,
 
+    /// Show a progress bar during vectorization
+    #[arg(long)]
+    pub progress: bool,
+
+    /// Auto-select tuning parameters based on image characteristics
+    #[arg(long)]
+    pub autotrace: bool,
+
     /// Output format (default: svg, or inferred from file extension)
     #[arg(long, value_enum, default_value = "svg")]
     pub format: OutputFormat,
@@ -139,6 +147,9 @@ pub enum OutputFormat {
     Eps,
     Pdf,
     Ai,
+    Dxf,
+    GeoJson,
+    Gimppath,
 }
 
 impl OutputFormat {
@@ -147,6 +158,9 @@ impl OutputFormat {
             Some(ext) if ext == "eps" => OutputFormat::Eps,
             Some(ext) if ext == "pdf" => OutputFormat::Pdf,
             Some(ext) if ext == "ai" => OutputFormat::Ai,
+            Some(ext) if ext == "dxf" => OutputFormat::Dxf,
+            Some(ext) if ext == "json" => OutputFormat::GeoJson,
+            Some(ext) if ext == "gimppath" => OutputFormat::Gimppath,
             _ => OutputFormat::Svg,
         }
     }
@@ -285,5 +299,35 @@ mod tests {
         assert!(!is_supported_image(std::path::Path::new("readme")));
         assert!(!is_supported_image(std::path::Path::new("file.txt")));
         assert!(!is_supported_image(std::path::Path::new("noext")));
+    }
+
+    #[test]
+    fn progress_flag_parses() {
+        let cli = parse_args(["img2svg", "-i", "logo.png", "--progress"]);
+        assert!(cli.progress);
+    }
+
+    #[test]
+    fn autotrace_flag_parses() {
+        let cli = parse_args(["img2svg", "-i", "logo.png", "--autotrace"]);
+        assert!(cli.autotrace);
+    }
+
+    #[test]
+    fn format_geojson_parses() {
+        let cli = parse_args(["img2svg", "-i", "map.png", "-o", "map.json", "--format", "geo-json"]);
+        assert_eq!(cli.format, OutputFormat::GeoJson);
+    }
+
+    #[test]
+    fn format_dxf_inferred_from_output_path() {
+        let cli = parse_args(["img2svg", "-i", "drawing.png", "-o", "drawing.dxf"]);
+        assert_eq!(OutputFormat::from_path(&cli.output.clone().unwrap()), OutputFormat::Dxf);
+    }
+
+    #[test]
+    fn format_gimppath_parses() {
+        let cli = parse_args(["img2svg", "-i", "shape.png", "--format", "gimppath"]);
+        assert_eq!(cli.format, OutputFormat::Gimppath);
     }
 }

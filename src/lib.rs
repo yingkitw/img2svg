@@ -40,6 +40,8 @@ pub mod despeckle;
 pub mod centerline_tracer;
 /// EPS/PDF/AI vector export.
 pub mod eps_generator;
+/// DXF/GeoJSON/Gimppath vector export.
+pub mod extra_backends;
 /// Logo fill + outline separation.
 pub mod logo_pipeline;
 /// HTML parameter tuning grid generator.
@@ -85,6 +87,9 @@ pub use image_filters::{
 pub use eps_generator::{
     write_enhanced_ai, write_enhanced_eps, write_enhanced_output, write_enhanced_pdf,
     write_vectorized_eps, EnhancedOutputFormat,
+};
+pub use extra_backends::{
+    write_enhanced_dxf, write_enhanced_geojson, write_enhanced_gimppath,
 };
 /// Re-export image loading and quantization functions.
 pub use image_processor::{

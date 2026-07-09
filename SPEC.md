@@ -4,7 +4,7 @@
 Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with filled color regions.
 
 ## Input
-- Raster image file (PNG, JPEG, BMP, WebP, TIFF via `image` crate)
+- Raster image file (PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld via `image` crate)
 - CLI Parameters:
   - `--input` / `-i`: Input image file or directory (batch mode)
   - `--output` / `-o`: Output SVG file or directory
@@ -25,6 +25,8 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--min-region-area`: Despeckle threshold in pixels (default 20; Potrace turdsize equivalent)
   - `--no-despeckle`: Disable despeckle pass
   - `--tune`: Generate HTML parameter comparison grid
+  - `--progress`: Show stage-based progress bar on stderr during vectorization
+  - `--autotrace`: Auto-select tuning parameters (colors, smoothing, simplification, preprocess, optimizations) based on image characteristics
   - `--format`: Output format — `svg`, `eps`, `pdf`, or `ai` (default `svg`; inferred from `-o` extension)
 
 ### MCP Tool (`convert_image_to_svg`)
@@ -33,7 +35,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 - `legacy` (boolean, default false): median-cut / RDP line-segment pipeline
 - `num_colors`, `preprocess` (default true), `preset` (`logo`|`photo`|`icon`)
 - `centerline`, `logo_mode`, `superpixel`, `optimize_corners` (booleans)
-- `output_format`: `svg`, `eps`, `pdf`, or `ai`
+- `output_format`: `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath`
 - `smooth_level`, `threshold` (legacy only)
 - `max_size`, `progress_token`
 - Response `details`: `pipeline`, `output_format`, `output_size_bytes`, `width`, `height`, `colors_used`
@@ -44,7 +46,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 - Response `details`: `total`, `converted`, `errors`, `files[]` with per-file `success` / `error`
 
 ## Output
-- Vector file: SVG (default), EPS, minimal PDF, or Illustrator-compatible AI wrapper
+- Vector file: SVG (default), EPS, minimal PDF, Illustrator-compatible AI wrapper, DXF, GeoJSON, or GIMP path
 - Background color auto-detected and rendered as `<rect>`
 - One `<path>` per non-background color, using merged subpaths
 - ViewBox and dimensions match input image
@@ -91,7 +93,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 261 tests passing (209 lib + 204 bin + 14 MCP + 30 integration + 3 doctests)
+- ✅ 490 test executions passing (217 lib + 222 bin + 14 MCP + 34 integration + 3 doctests); 273 unique tests
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -120,13 +122,14 @@ Applied before quantization for photographs:
 
 ## Test Suite
 
-### Unit Tests (306 total)
-- `image_processor_tests.rs`: 13 tests
+### Unit Tests (273 unique tests total)
+- `image_processor_tests.rs`: ~25 tests
   - Image data creation and validation
   - Color quantization with various parameters
   - Edge cases (empty, single color, zero colors)
   - Median-cut algorithm tests
-- `vectorizer_tests.rs`: 51 tests
+  - Animated GIF loading, CMYK conversion, color space detection
+- `vectorizer_tests.rs`: ~41 tests
   - Marching squares contour tracing
   - Polygon area calculation (signed/unsigned)
   - Point-in-polygon detection
@@ -135,23 +138,36 @@ Applied before quantization for photographs:
   - RDP simplification
   - Boundary smoothing
   - Full vectorization pipeline
-- `svg_generator_tests.rs`: 24 tests
+- `svg_generator_tests.rs`: ~26 tests
   - SVG generation with various inputs
   - Alpha channel output (`fill-opacity`)
   - Hierarchical evenodd fill-rule
   - Coordinate formatting
   - Subpath string creation
   - Multi-path handling
-- `image_filters/*`: ~140 tests across Canny, color ops, contrast, effects, enhancement, morphology, thresholding
-- `enhanced_vectorizer.rs`: 13 tests
-- `lib_tests.rs`: 1 test
+  - Streaming writer-based generation
+- `image_filters/*`: ~50 tests across Canny, color ops, contrast, effects, enhancement, morphology, segmentation, thresholding, denoising
+- `enhanced_vectorizer.rs`: ~18 tests
+  - Enhanced pipeline vectorization
+  - SVG output including alpha and streaming
+  - Progress-bar path
+  - Autotrace heuristic selection (logo, icon, photo)
+- `extra_backends.rs`: 4 tests
+  - Bézier flattening
+  - GeoJSON, DXF, and Gimppath writers
+- `lib.rs`: 3 tests
   - Conversion options defaults
-- `cli.rs`: 3 tests
+  - `is_supported_image`
+  - `convert_enhanced_to_svg_string`
+- `cli.rs`: 13 tests
+  - Preset defaults and override semantics
   - Supported image extension checks
-- `mcp.rs`: 12 tests
-  - Server initialization, tool schema, validation, enhanced default, legacy, preset, EPS export, progress
+  - `--progress` and `--autotrace` flag parsing
+  - `--format` inference and explicit format parsing
+- `mcp.rs`: 14 tests
+  - Server initialization, tool schema, validation, enhanced default, legacy, preset, EPS export, batch directory, progress
 
-### Integration Tests (27 total)
+### Integration Tests (34 total)
 - Full pipeline conversion tests (legacy + enhanced)
 - Test image creation (gradient, checkerboard, circle, solid)
 - SVG output validation

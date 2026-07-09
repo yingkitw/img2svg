@@ -23,6 +23,93 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::Write;
 
+/// Print a single progress update to stderr when `progress` is enabled.
+/// Uses a carriage return so the bar stays on one line.
+fn report_progress(enabled: bool, percent: u8, label: &str) {
+    if !enabled {
+        return;
+    }
+    let width = 20usize;
+    let filled = (percent as usize * width / 100).min(width);
+    let bar = format!(
+        "[{}{}]",
+        "#".repeat(filled),
+        "-".repeat(width - filled)
+    );
+    eprint!("\r{} {:3}% {}", bar, percent, label);
+    let _ = std::io::stderr().flush();
+}
+
+/// Finish the progress line by moving to the next line.
+fn finish_progress(enabled: bool) {
+    if enabled {
+        eprintln!();
+    }
+}
+
+/// Log a pipeline stage. When `progress` is enabled, draws the progress bar;
+/// otherwise prints a plain stage message to stderr.
+fn stage_log(progress: bool, percent: u8, msg: &str) {
+    if progress {
+        report_progress(true, percent, msg);
+    } else {
+        eprintln!("    {}", msg);
+    }
+}
+
+/// Auto-tune enhanced options based on simple image heuristics.
+/// Returns a modified options struct; the original `autotrace` flag is cleared
+/// so the pipeline does not recurse.
+fn autotune_options(image: &ImageData, options: &EnhancedOptions) -> EnhancedOptions {
+    let n_colors = count_distinct_colors(image);
+    let pixel_count = (image.width * image.height) as usize;
+    let max_dim = image.width.max(image.height) as usize;
+
+    let mut tuned = options.clone();
+    tuned.autotrace = false;
+
+    if n_colors <= 8 && pixel_count < 200_000 {
+        // Logo-like: flat graphics with a handful of colors
+        tuned.num_colors = 8;
+        tuned.smoothing_passes = 2;
+        tuned.simplification_tolerance = 1.5;
+        tuned.curve_tolerance = 2.0;
+        tuned.corner_threshold = 60.0;
+        tuned.min_region_area = 20;
+        tuned.preprocess = false;
+        tuned.optimize_corners = true;
+        tuned.optimize_curves = true;
+        tuned.logo_mode = true;
+    } else if max_dim < 200 && n_colors <= 64 {
+        // Icon-like: small, compact
+        tuned.num_colors = 12;
+        tuned.smoothing_passes = 2;
+        tuned.simplification_tolerance = 1.0;
+        tuned.curve_tolerance = 1.5;
+        tuned.corner_threshold = 45.0;
+        tuned.min_region_area = 10;
+        tuned.preprocess = false;
+        tuned.optimize_corners = true;
+        tuned.optimize_curves = true;
+        tuned.logo_mode = false;
+    } else if n_colors > 1000 || pixel_count > 500_000 {
+        // Photo-like: many colors or large resolution
+        tuned.num_colors = 16;
+        tuned.smoothing_passes = 3;
+        tuned.simplification_tolerance = 2.0;
+        tuned.curve_tolerance = 2.5;
+        tuned.corner_threshold = 90.0;
+        tuned.min_region_area = 30;
+        tuned.preprocess = true;
+        tuned.optimize_corners = false;
+        tuned.optimize_curves = true;
+        tuned.logo_mode = false;
+    }
+    // else: keep existing defaults (general tuning)
+
+    tuned
+}
+
 /// Enhanced vectorization options.
 #[derive(Debug, Clone)]
 pub struct EnhancedOptions {
@@ -56,6 +143,10 @@ pub struct EnhancedOptions {
     pub optimize_curves: bool,
     /// Separate fill and outline layers for logos
     pub logo_mode: bool,
+    /// Show a progress bar on stderr during vectorization.
+    pub progress: bool,
+    /// Auto-select tuning parameters based on image characteristics.
+    pub autotrace: bool,
 }
 
 impl Default for EnhancedOptions {
@@ -76,6 +167,8 @@ impl Default for EnhancedOptions {
             optimize_corners: false,
             optimize_curves: false,
             logo_mode: false,
+            progress: false,
+            autotrace: false,
         }
     }
 }
@@ -113,15 +206,23 @@ pub fn vectorize_enhanced(
         return vectorize_centerline(image_data, options);
     }
 
+    let options = if options.autotrace {
+        autotune_options(image_data, options)
+    } else {
+        options.clone()
+    };
+
     let width = image_data.width as usize;
     let height = image_data.height as usize;
     let pixel_count = width * height;
     let is_small = pixel_count < 10_000;
 
     // Detect if image has many colors (photos, gradients)
+    let progress = options.progress;
+
     let n_colors = count_distinct_colors(image_data);
     let is_many_colors = n_colors > 16;
-    eprintln!("    Detected {} unique colors", n_colors);
+    stage_log(progress, 5, &format!("Detected {} unique colors", n_colors));
 
     // Determine target color count
     let target_colors = if options.num_colors > 0 {
@@ -131,11 +232,11 @@ pub fn vectorize_enhanced(
     } else {
         n_colors.min(64)
     };
-    eprintln!("    Target palette: {} colors", target_colors);
+    stage_log(progress, 10, &format!("Target palette: {} colors", target_colors));
 
     // Optional preprocessing (bilateral filter for photos)
     let preprocessed = if options.preprocess && is_many_colors {
-        eprintln!("    Applying bilateral filter preprocessing...");
+        stage_log(progress, 25, "Applying bilateral filter preprocessing...");
         let opts = PreprocessOptions::photo();
         preprocess(image_data, &opts)?
     } else {
@@ -143,7 +244,7 @@ pub fn vectorize_enhanced(
     };
 
     // Edge detection + edge-aware quantization (k-means++ with perceptual distance)
-    eprintln!("    Detecting edges and quantizing...");
+    stage_log(progress, 40, "Detecting edges and quantizing...");
     let edges = detect_edges_sobel(&preprocessed);
     // Detect if image is a photo (continuous tones) vs complex graphic (many distinct colors).
     // Photos: many colors, smooth gradients → fewer smoothing passes, bilateral preprocess.
@@ -169,9 +270,13 @@ pub fn vectorize_enhanced(
     };
 
     if options.min_region_area > 1 {
-        eprintln!(
-            "    Despeckle: removing regions smaller than {} px...",
-            options.min_region_area
+        stage_log(
+            progress,
+            55,
+            &format!(
+                "Despeckle: removing regions smaller than {} px...",
+                options.min_region_area
+            ),
         );
         quantized = despeckle(&quantized, options.min_region_area);
     }
@@ -242,7 +347,14 @@ pub fn vectorize_enhanced(
     // Minimum polygon area from options (Potrace turdsize equivalent)
     let min_poly_area = options.min_region_area.max(1) as f64;
 
-    eprintln!("    Extracting contours for {} colors (bg excluded)...", color_list.len().saturating_sub(1));
+    stage_log(
+        progress,
+        70,
+        &format!(
+            "Extracting contours for {} colors (bg excluded)...",
+            color_list.len().saturating_sub(1)
+        ),
+    );
 
     // For each color: build binary mask → marching squares → smooth → simplify → Bézier fit
     // Collect (display_color, pixel_count, contours) tuples for parallel processing
@@ -415,7 +527,12 @@ pub fn vectorize_enhanced(
 
     // Sort: largest regions first (back-to-front layering)
     enhanced_paths.sort_unstable_by(|a, b| b.area.cmp(&a.area));
-    eprintln!("    Generated {} paths", enhanced_paths.len());
+    stage_log(
+        progress,
+        100,
+        &format!("Generated {} paths", enhanced_paths.len()),
+    );
+    finish_progress(progress);
 
     Ok(EnhancedVectorData {
         width: image_data.width,
@@ -1112,5 +1229,81 @@ mod tests {
         assert_eq!(groups.len(), 2); // red group + blue group
         assert_eq!(groups[0].1.len(), 2); // two red paths merged
         assert_eq!(groups[1].1.len(), 1);
+    }
+
+    #[test]
+    fn test_vectorize_enhanced_with_progress() {
+        let img = make_test_image(20, 20);
+        let mut opts = EnhancedOptions::default();
+        opts.num_colors = 4;
+        opts.preprocess = false;
+        opts.progress = true;
+        let data = vectorize_enhanced(&img, &opts).expect("vectorize with progress");
+        assert!(!data.paths.is_empty());
+    }
+
+    #[test]
+    fn test_autotune_selects_logo() {
+        // 4-color 100x100 image → logo-like
+        let mut img = ImageData {
+            width: 100,
+            height: 100,
+            pixels: vec![rgb::RGBA8::new(255, 0, 0, 255); 100 * 100],
+        };
+        for y in 0..50 {
+            for x in 50..100 {
+                img.pixels[y * 100 + x] = rgb::RGBA8::new(0, 255, 0, 255);
+            }
+        }
+        for y in 50..100 {
+            for x in 0..50 {
+                img.pixels[y * 100 + x] = rgb::RGBA8::new(0, 0, 255, 255);
+            }
+        }
+        for y in 50..100 {
+            for x in 50..100 {
+                img.pixels[y * 100 + x] = rgb::RGBA8::new(255, 255, 0, 255);
+            }
+        }
+        let opts = EnhancedOptions { autotrace: true, ..Default::default() };
+        let tuned = autotune_options(&img, &opts);
+        assert_eq!(tuned.num_colors, 8);
+        assert!(tuned.logo_mode);
+        assert!(!tuned.preprocess);
+        assert!(tuned.optimize_corners);
+    }
+
+    #[test]
+    fn test_autotune_selects_icon() {
+        // 64-color 50x50 image → icon-like
+        let mut pixels = Vec::with_capacity(50 * 50);
+        for i in 0..(50 * 50) {
+            pixels.push(rgb::RGBA8::new((i % 64) as u8, 128, 128, 255));
+        }
+        let img = ImageData { width: 50, height: 50, pixels };
+        let opts = EnhancedOptions { autotrace: true, ..Default::default() };
+        let tuned = autotune_options(&img, &opts);
+        assert_eq!(tuned.num_colors, 12);
+        assert_eq!(tuned.min_region_area, 10);
+        assert!(!tuned.logo_mode);
+    }
+
+    #[test]
+    fn test_autotune_selects_photo() {
+        // 200x200 image with >1000 distinct colors → photo-like
+        let mut pixels = Vec::with_capacity(200 * 200);
+        for i in 0..(200 * 200) {
+            let r = (i % 256) as u8;
+            let g = ((i / 256) % 256) as u8;
+            let b = ((i / 65_536) % 256) as u8;
+            pixels.push(rgb::RGBA8::new(r, g, b, 255));
+        }
+        let img = ImageData { width: 200, height: 200, pixels };
+        let opts = EnhancedOptions { autotrace: true, ..Default::default() };
+        let tuned = autotune_options(&img, &opts);
+        assert_eq!(tuned.num_colors, 16);
+        assert!(tuned.preprocess);
+        assert!(!tuned.logo_mode);
+        assert!(!tuned.optimize_corners);
     }
 }

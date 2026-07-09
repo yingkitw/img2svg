@@ -687,7 +687,7 @@ pub fn bezier_to_svg_path_to<W: Write>(
 
 /// Check if a cubic Bézier is effectively a straight line
 /// (control points lie close to the start-end line).
-fn is_linear_curve(curve: &BezierCurve) -> bool {
+pub fn is_linear_curve(curve: &BezierCurve) -> bool {
     let dx = curve.end.x - curve.start.x;
     let dy = curve.end.y - curve.start.y;
     let len = (dx * dx + dy * dy).sqrt();

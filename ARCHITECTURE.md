@@ -267,7 +267,7 @@ convert(Path::new("input.png"), Path::new("output.svg"), &ConversionOptions::def
 ### Test Dependencies
 - (dev-dependencies only)
 - Test images in `examples/input/`
-- 254 tests total: 204 lib + 204 bin + 14 MCP + 28 integration + 3 doctests (some overlap between lib/bin module copies)
+- 490 test executions: 217 lib + 222 bin + 14 MCP + 34 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` tests only run in the binary target)
 
 ## Performance Characteristics
 

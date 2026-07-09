@@ -2,7 +2,7 @@
 
 A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
 
-[![Tests](https://img.shields.io/badge/tests-261%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-490%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 ## Why img2svg?
@@ -179,7 +179,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-img2svg = "0.1"
+img2svg = "0.1.10"
 ```
 
 ### MCP Server
@@ -244,7 +244,9 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--min-region-area` | | 20 | Despeckle: merge connected regions smaller than N pixels (Potrace turdsize) |
 | `--no-despeckle` | | false | Disable despeckle pass |
 | `--tune` | | false | Generate HTML parameter comparison grid instead of converting |
-| `--format` | | svg | Output format: `svg`, `eps`, `pdf`, or `ai` (also inferred from `-o` extension) |
+| `--progress` | | false | Show a stage-based progress bar on stderr during vectorization |
+| `--autotrace` | | false | Auto-select tuning parameters based on image characteristics |
+| `--format` | | svg | Output format: `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (also inferred from `-o` extension) |
 
 **Presets** (explicit flags override preset defaults):
 

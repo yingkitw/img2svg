@@ -376,6 +376,87 @@ fn test_enhanced_auto_color_count_zero() {
 }
 
 #[test]
+fn test_enhanced_autotrace_mode() {
+    let test_img = PathBuf::from("/tmp/img2svg_enhanced_autotrace.png");
+    // 4-color checkerboard pattern triggers logo-like autotune
+    create_test_png(&test_img, 80, 80, "checkerboard");
+
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        autotrace: true,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("autotrace");
+    assert_eq!(data.width, 80);
+    assert_eq!(data.height, 80);
+
+    let svg = generate_enhanced_svg(&data);
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("<path"));
+
+    let _ = fs::remove_file(&test_img);
+}
+
+#[test]
+fn test_enhanced_geojson_export() {
+    let test_img = PathBuf::from("/tmp/test_geojson.png");
+    let test_geojson = PathBuf::from("/tmp/test_geojson_output.json");
+    create_test_png(&test_img, 40, 40, "circle");
+
+    let image = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions { preprocess: false, ..Default::default() };
+    let data = vectorize_enhanced(&image, &opts).expect("vectorize");
+    img2svg::write_enhanced_geojson(&data, &test_geojson).expect("write geojson");
+
+    let s = fs::read_to_string(&test_geojson).unwrap();
+    assert!(s.contains("FeatureCollection"));
+    assert!(s.contains("Polygon"));
+
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_geojson);
+}
+
+#[test]
+fn test_enhanced_dxf_export() {
+    let test_img = PathBuf::from("/tmp/test_dxf.png");
+    let test_dxf = PathBuf::from("/tmp/test_dxf_output.dxf");
+    create_test_png(&test_img, 40, 40, "circle");
+
+    let image = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions { preprocess: false, ..Default::default() };
+    let data = vectorize_enhanced(&image, &opts).expect("vectorize");
+    img2svg::write_enhanced_dxf(&data, &test_dxf).expect("write dxf");
+
+    let s = fs::read_to_string(&test_dxf).unwrap();
+    assert!(s.contains("ENTITIES"));
+    assert!(s.contains("LWPOLYLINE"));
+    assert!(s.contains("EOF"));
+
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_dxf);
+}
+
+#[test]
+fn test_enhanced_gimppath_export() {
+    let test_img = PathBuf::from("/tmp/test_gimppath.png");
+    let test_gimppath = PathBuf::from("/tmp/test_gimppath_output.gimppath");
+    create_test_png(&test_img, 40, 40, "circle");
+
+    let image = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions { preprocess: false, ..Default::default() };
+    let data = vectorize_enhanced(&image, &opts).expect("vectorize");
+    img2svg::write_enhanced_gimppath(&data, &test_gimppath).expect("write gimppath");
+
+    let s = fs::read_to_string(&test_gimppath).unwrap();
+    assert!(s.contains("<svg"));
+    assert!(s.contains("<path"));
+
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_gimppath);
+}
+
+#[test]
 fn test_load_jpeg_input() {
     let test_img = PathBuf::from("/tmp/img2svg_test_input.jpg");
     create_test_png(&test_img, 30, 30, "checkerboard");

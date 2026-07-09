@@ -14,11 +14,13 @@ mod enhanced_vectorizer;
 mod centerline_tracer;
 mod logo_pipeline;
 mod eps_generator;
+mod extra_backends;
 mod tune;
 
 use anyhow::Result;
 use cli::{enhanced_preprocess, parse_args, is_supported_image, Cli, OutputFormat};
 use eps_generator::{write_enhanced_ai, write_enhanced_eps, write_enhanced_pdf, write_vectorized_eps};
+use extra_backends::{write_enhanced_dxf, write_enhanced_geojson, write_enhanced_gimppath};
 use preprocessor::{preprocess, PreprocessOptions};
 use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions, EnhancedVectorData};
 use std::path::{Path, PathBuf};
@@ -44,6 +46,8 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         } else {
             cli.min_region_area
         },
+        progress: cli.progress,
+        autotrace: cli.autotrace,
         ..Default::default()
     }
 }
@@ -54,6 +58,9 @@ fn output_extension(format: OutputFormat) -> &'static str {
         OutputFormat::Eps => "eps",
         OutputFormat::Pdf => "pdf",
         OutputFormat::Ai => "ai",
+        OutputFormat::Dxf => "dxf",
+        OutputFormat::GeoJson => "json",
+        OutputFormat::Gimppath => "gimppath",
     }
 }
 
@@ -77,6 +84,9 @@ fn write_enhanced_output(data: &EnhancedVectorData, path: &Path, format: OutputF
         OutputFormat::Eps => write_enhanced_eps(data, path),
         OutputFormat::Pdf => write_enhanced_pdf(data, path),
         OutputFormat::Ai => write_enhanced_ai(data, path),
+        OutputFormat::Dxf => write_enhanced_dxf(data, path),
+        OutputFormat::GeoJson => write_enhanced_geojson(data, path),
+        OutputFormat::Gimppath => write_enhanced_gimppath(data, path),
     }
 }
 
@@ -90,10 +100,10 @@ fn write_original_output(
         OutputFormat::Svg if advanced => svg_generator::generate_svg_advanced(vectorized, path),
         OutputFormat::Svg => svg_generator::generate_svg(vectorized, path),
         OutputFormat::Eps => write_vectorized_eps(vectorized, path),
-        OutputFormat::Pdf | OutputFormat::Ai => {
+        OutputFormat::Pdf | OutputFormat::Ai | OutputFormat::Dxf | OutputFormat::GeoJson | OutputFormat::Gimppath => {
             let tmp = path.with_extension("svg");
             svg_generator::generate_svg(vectorized, &tmp)?;
-            eprintln!("  Note: PDF/AI from original pipeline writes SVG to {}", tmp.display());
+            eprintln!("  Note: PDF/AI/DXF/GeoJSON/Gimppath from original pipeline writes SVG to {}", tmp.display());
             Ok(())
         }
     }

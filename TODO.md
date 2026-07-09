@@ -17,16 +17,16 @@
 - [x] All 5 test images converting successfully with good quality
 
 ### Testing
-- [x] Unit tests for image_processor (13 tests)
-- [x] Unit tests for vectorizer (35 tests)
-- [x] Unit tests for svg_generator (20 tests)
-- [x] Integration tests (30 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS**
-- [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides (8 tests, `src/cli.rs`)
+- [x] Unit tests for image_processor (~25 tests)
+- [x] Unit tests for vectorizer (~41 tests)
+- [x] Unit tests for svg_generator (~26 tests)
+- [x] Integration tests (34 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS/autotrace/DXF/GeoJSON/Gimppath**, **animated GIF / CMYK / WebP / BMP / JPEG**
+- [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides, **`--progress`** / **`--autotrace`** flags, **`--format`** inference (13 tests, `src/cli.rs`)
 - [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (14 tests, `src/mcp.rs`)
 - [x] MCP enhanced pipeline as default; `legacy`, `preset`, mode flags, and `output_format` parameters
 - [x] MCP batch tool `convert_image_directory` + library `batch_convert_enhanced()`
-- [x] Library API tests (2 tests)
-- [x] Run `cargo test` for full counts (lib + binary targets + `img2svg-mcp` + integration + doctests)
+- [x] Library API tests (3 doctests + 3 unit tests)
+- [x] Run `cargo test` for full counts (217 lib + 222 bin + 14 `img2svg-mcp` + 34 integration + 3 doctests = 490 test executions)
 - [x] Criterion benchmark `benches/pipeline_comparison.rs` (original vs enhanced at 128/256/512 px)
 
 ### Project Structure
@@ -60,7 +60,7 @@
 - [x] Adaptive color count based on image size (256/128/64)
 - [x] Rayon parallel path processing (smooth → simplify → Bézier fit)
 - [x] Bézier pipeline promoted to default; --original flag for legacy pipeline
-- [x] 50+ new unit tests for enhanced modules
+- [x] 15+ unit tests for enhanced pipeline modules
 - [x] SVG size optimization: L for linear curves, C for true Bézier, collinear L merge
 - [x] Distance-based collinear merge catches diagonal staircases from marching squares
 - [x] Adaptive simplification tolerance (2x for photos, 1.5 for graphics)
@@ -109,6 +109,9 @@
 - [x] Batch MCP tool for directory conversion (`convert_image_directory`, `batch_convert_enhanced`)
 - [x] Despeckle / speckle suppression (`despeckle.rs`, `--min-region-area`, `--no-despeckle`)
 - [x] Spline optimization / curve merging pass (`optimize_bezier_curves`, `--optimize-curves`)
+- [x] CLI progress bar (`--progress`) with stage-based progress reporting for enhanced pipeline
+- [x] `--autotrace` mode that auto-selects tuning parameters based on image characteristics (logo / icon / photo heuristics)
+- [x] Additional vector export backends: DXF, GeoJSON, Gimppath (`--format dxf|geo-json|gimppath`)
 
 ## Pending 🚧
 
@@ -125,9 +128,19 @@
 - [ ] Vector-to-raster comparison tools
 - [ ] Multi-color hierarchical SVG layers (Inkscape-style grouped paths per color)
 - [ ] Optical character recognition (OCR) text preservation in logos (vtracer)
+- [x] CLI progress bar for large image / batch conversions (Potrace `--progress`)
+- [x] Additional vector export backends: DXF, GeoJSON, Gimppath (Potrace)
+- [x] `--autotrace` mode that auto-selects the best quantization/filter strategy (Inkscape Autotrace)
+- [ ] Multi-page PDF output for batch conversions (Potrace / Inkscape)
+- [ ] Live preview server for interactive parameter tuning (Inkscape Trace Bitmap preview)
 
 ### Competitive gaps (from Potrace, vtracer, Inkscape trace)
 - [x] Corner optimization / curve optimization pass (Potrace-style)
 - [x] Centerline tracing mode for line art (vtracer)
 - [x] Multi-pass outline + fill separation for logos
 - [x] CLI `--preset logo|photo|icon` with tuned defaults
+- [x] CLI progress bar (Potrace `--progress`)
+- [x] DXF / GeoJSON / Gimppath export backends (Potrace)
+- [x] Auto-algorithm selection / `--autotrace` mode (Inkscape Autotrace)
+- [ ] Multi-page PDF output for batch conversions (Potrace / Inkscape)
+- [ ] Live interactive preview for parameter tuning (Inkscape Trace Bitmap dialog)
