@@ -1,9 +1,44 @@
-# img2svg
+# img2svg — High-Performance Image to SVG Converter in Rust
 
-A high-performance image to SVG converter written in Rust. Transform raster images (PNG, JPEG, etc.) into scalable vector graphics with cubic Bézier curves, edge-aware quantization, and advanced path optimization.
+**img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
 [![Tests](https://img.shields.io/badge/tests-490%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
+[![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Rust Edition](https://img.shields.io/badge/rust-edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/)
+[![MCP](https://img.shields.io/badge/MCP-server-blueviolet)](https://modelcontextprotocol.io/)
+[![Pure Rust](https://img.shields.io/badge/pure-Rust-orange)](https://www.rust-lang.org/)
+
+## Table of Contents
+
+- [What is img2svg?](#what-is-img2svg)
+- [Why img2svg?](#why-img2svg)
+- [Key Features](#key-features)
+- [At a Glance](#at-a-glance)
+- [Installation](#installation)
+- [CLI Usage](#cli-usage)
+- [Rust Library Usage](#rust-library-usage)
+- [MCP Server (for AI Assistants)](#mcp-server-for-ai-assistants)
+- [Examples & Quality](#examples--quality)
+- [Algorithm](#algorithm)
+- [Performance & Benchmarks](#performance--benchmarks)
+- [Tips for Best Results](#tips-for-best-results)
+- [Comparison with Alternatives](#comparison-with-alternatives)
+- [Limitations](#limitations)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+- [License](#license)
+
+## What is img2svg?
+
+**img2svg** is a Rust-native raster-to-vector converter that transforms bitmap images into SVG (Scalable Vector Graphics). It supports three usage modes from a single crate:
+
+1. **Command-line tool (`img2svg`)** — batch or single-file conversion from your terminal
+2. **Rust library (`img2svg` crate)** — embed vectorization in your own applications
+3. **MCP server (`img2svg-mcp`)** — let AI assistants like Claude Desktop convert images to SVG
+
+It works as a drop-in alternative to Potrace (which is black-and-white only), ImageMagick's `convert` (which produces jagged edges), and vtracer (limited optimization). Unlike web-only services like Vector Magic, img2svg runs **entirely offline** with no cloud dependency.
 
 ## Why img2svg?
 
@@ -15,7 +50,7 @@ Converting raster images to vector format is essential for:
 - **Editability**: Vectors can be modified in design tools (Illustrator, Inkscape, Figma)
 - **Web performance**: SVGs are code-based and can be optimized, animated, and styled with CSS
 
-### Why img2svg?
+### Feature Comparison
 
 | Feature | img2svg | ImageMagick | Potrace | Vector Magic |
 |---------|---------|-------------|---------|--------------|
@@ -46,6 +81,36 @@ Converting raster images to vector format is essential for:
 15. **Animated GIF Support**: Converts each frame to a numbered SVG file (`output_001.svg`, `output_002.svg`, etc.)
 16. **CMYK Color Space Input**: `cmyk_to_rgb` conversion and JPEG APP14 marker detection for print workflow support
 17. **Flexible Usage**: CLI tool, Rust library, and MCP server
+
+## Key Features
+
+- **Pure Rust, zero external dependencies** for vectorization — no C/C++ toolchain required
+- **Three interfaces from one crate**: CLI, library API, and Model Context Protocol (MCP) server
+- **Full-color vectorization** with k-means++ palette quantization and Sobel edge detection
+- **Two pipelines**: enhanced cubic-Bézier (default) and legacy line-segment (`--original`)
+- **Smart presets** for common use cases: `--preset logo`, `--preset photo`, `--preset icon`
+- **Stroke tracing** for line art (`--centerline`) and logo fill/stroke separation (`--logo-mode`)
+- **Multiple output formats**: SVG, EPS, PDF, AI, DXF, GeoJSON, GIMP path
+- **Animated GIF support** — each frame becomes a numbered SVG
+- **CMYK JPEG support** via APP14 marker detection for print workflows
+- **Batch conversion** of entire directories in one command
+- **AI-assistant ready** via the built-in MCP server
+
+## At a Glance
+
+| Attribute | Value |
+|-----------|-------|
+| **Language** | Rust (edition 2024) |
+| **License** | Apache-2.0 |
+| **Latest version** | 0.1.10 |
+| **Supported inputs** | PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld |
+| **Supported outputs** | SVG, EPS, PDF, AI, DXF, GeoJSON, GIMP path |
+| **Default pipeline** | Cubic Bézier with edge-aware quantization |
+| **CLI binary** | `img2svg` |
+| **MCP binary** | `img2svg-mcp` |
+| **Test count** | 490+ passing |
+| **Performance** | ~60–70 ms for a 512×512 image (release build) |
+| **Default max dimension** | 4096 px (auto-resizes larger images) |
 
 ## Examples & Quality
 
@@ -481,6 +546,38 @@ img2svg -i photo.jpg -o photo.svg --preprocess -c 12 -t 0.15 -s 3
 ## Contributing
 
 Contributions are welcome! Please see [TODO.md](TODO.md) for planned improvements.
+
+## FAQ
+
+**Q: What is the difference between img2svg and Potrace?**
+A: Potrace only handles black-and-white (1-bit) images and produces line-segment paths. img2svg supports full color, produces smoother cubic Bézier curves, and runs natively on Rust without a C dependency.
+
+**Q: Can img2svg vectorize photographs?**
+A: Yes — use the `--preprocess` flag (or `--preset photo`) which applies bilateral filtering and color reduction before vectorization. For best results with photos, use 8–16 colors.
+
+**Q: How does img2svg compare to ImageMagick's `convert`?**
+A: ImageMagick's trace pipeline is older and often produces jagged edges. img2svg uses modern k-means++ quantization, Sobel edge detection, and least-squares Bézier fitting for smoother, smaller output.
+
+**Q: Is img2svg a good alternative to vtracer?**
+A: Yes. img2svg is written in pure Rust (no Node.js dependency), supports an MCP server for AI assistants, and offers both Bezier and line-segment pipelines plus Potrace-style corner optimization.
+
+**Q: Can I use img2svg from Python or JavaScript?**
+A: img2svg is a Rust crate, but you can call the CLI from any language. For AI assistants, use the MCP server which works with Claude Desktop and any MCP-compatible client.
+
+**Q: What image formats are supported?**
+A: PNG, JPEG, GIF (including animated), BMP, ICO, TIFF, WebP, PNM, TGA, DDS, and Farbfeld. Output formats include SVG, EPS, PDF, AI, DXF, GeoJSON, and GIMP path.
+
+**Q: Does img2svg preserve transparency?**
+A: Yes. Alpha channels are preserved as `fill-opacity` and `stroke-opacity` attributes on the SVG output.
+
+**Q: How do I get the smallest SVG file size?**
+A: Use fewer colors (`-c 4` to `8`), enable `--preprocess` for photos, and choose the `logo` or `icon` preset for flat graphics. The enhanced pipeline also applies collinear merging and thin-stripe elimination by default.
+
+**Q: Is img2svg free for commercial use?**
+A: Yes — img2svg is released under the Apache License 2.0, which permits commercial use, modification, and redistribution.
+
+**Q: How do I install img2svg?**
+A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.10"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release` (produces both `img2svg` and `img2svg-mcp` binaries).
 
 ## License
 

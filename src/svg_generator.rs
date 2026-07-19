@@ -80,13 +80,6 @@ pub fn write_multi_path_to<W: Write>(writer: &mut W, subpaths: &[Vec<Point>]) ->
     Ok(())
 }
 
-/// Build a single SVG path `d` attribute containing multiple M...Z subpaths.
-pub fn create_multi_path_string(subpaths: &[Vec<Point>]) -> String {
-    let mut buf = Vec::new();
-    write_multi_path_to(&mut buf, subpaths).expect("in-memory write never fails");
-    String::from_utf8(buf).expect("SVG path data is valid UTF-8")
-}
-
 /// Return SVG hex color and optional fill-opacity attribute for (r,g,b,a).
 pub fn color_with_alpha(color: (u8, u8, u8, u8)) -> (String, String) {
     let hex = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
@@ -134,18 +127,6 @@ pub fn write_subpath_to<W: Write>(writer: &mut W, pts: &[Point], closed: bool) -
         write!(writer, "Z")?;
     }
     Ok(())
-}
-
-/// Convert a single list of points into an SVG subpath using line segments.
-/// Marching squares + RDP already produces accurate contours; line segments
-/// are compact and browsers anti-alias them smoothly.
-///
-/// Zero-length segments (where consecutive points format to the same coordinate)
-/// are automatically removed to minimize SVG size.
-pub fn create_subpath_string(pts: &[Point], closed: bool) -> String {
-    let mut buf = Vec::new();
-    write_subpath_to(&mut buf, pts, closed).expect("in-memory write never fails");
-    String::from_utf8(buf).expect("SVG path data is valid UTF-8")
 }
 
 #[cfg(test)]

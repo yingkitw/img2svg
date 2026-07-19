@@ -3,19 +3,36 @@
 //! This module provides a comprehensive set of image processing operations
 //! including noise reduction, edge enhancement, contrast adjustment, thresholding,
 //! morphological operations, and color transformations.
+//!
+//! Items here are part of the documented public image-filter toolkit.
+//! They are surfaced through crate-root re-exports rather than used
+//! internally, so the `dead_code` lint is silenced locally.
+#![allow(dead_code)]
 
 use crate::image_processor::ImageData;
 
+// Re-exports of the optional image filter toolkit. These items are surfaced
+// to the crate root from `lib.rs`; clippy cannot see through the pub-use
+// chain, so the lint is silenced locally.
+#[allow(unused_imports)]
 pub use self::canny::CannyEdgeDetector;
+#[allow(unused_imports)]
 pub use self::color_ops::{ColorOps, ColorTemperature, Saturation, HSL, LAB};
+#[allow(unused_imports)]
 pub use self::contrast::{AdaptiveToneMapper, HistogramEqualizer, CLAHE};
+#[allow(unused_imports)]
 pub use self::denoising::{NonLocalMeans, PeronaMalik};
+#[allow(unused_imports)]
 pub use self::effects::{EdgeGlowFilter, EmbossFilter, SepiaFilter, VignetteFilter, VintageFilter};
+#[allow(unused_imports)]
 pub use self::enhancement::{GammaCorrection, HighBoostFilter, LaplacianSharpen, UnsharpMask};
+#[allow(unused_imports)]
 pub use self::morphology::{MorphologyKind, MorphologyOp};
+#[allow(unused_imports)]
 pub use self::segmentation::{
     mean_shift_filter, quantize_from_labels, slic_superpixels, watershed_segment,
 };
+#[allow(unused_imports)]
 pub use self::thresholding::{AdaptiveThreshold, OtsuThreshold, SmartThreshold};
 
 mod canny;

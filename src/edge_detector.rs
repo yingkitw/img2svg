@@ -9,7 +9,11 @@ use crate::image_processor::ImageData;
 /// Edge detection result: grayscale edge map (0=no edge, 255=strong edge)
 #[derive(Debug, Clone)]
 pub struct EdgeMap {
+    /// Image width in pixels (mirrors `data.len() / height`).
+    #[allow(dead_code)] // Read by tests; kept for public API clarity.
     pub width: u32,
+    /// Image height in pixels (mirrors `data.len() / width`).
+    #[allow(dead_code)] // Read by tests; kept for public API clarity.
     pub height: u32,
     pub data: Vec<u8>,
 }

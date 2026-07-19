@@ -686,6 +686,7 @@ fn polygon_area(points: &[Point]) -> f64 {
 
 /// Generate SVG string from enhanced vector data.
 /// Uses gap-filling strokes and consecutive same-color path grouping.
+#[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
 pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
     let mut buffer = Vec::new();
     if let Err(e) = generate_enhanced_svg_to(data, &mut buffer) {

@@ -1,7 +1,5 @@
 //! Logo pipeline: separate fill regions from outline strokes.
 
-use crate::vectorizer::{marching_squares_contours, Point};
-
 /// Outline ring mask = dilated XOR eroded foreground.
 pub fn outline_mask(mask: &[bool], width: usize, height: usize) -> Vec<bool> {
     let dilated = dilate(mask, width, height);
@@ -55,18 +53,6 @@ fn erode(mask: &[bool], width: usize, height: usize) -> Vec<bool> {
     out
 }
 
-/// Extract fill contours and outline contours for a color mask.
-pub fn extract_logo_layers(
-    mask: &[bool],
-    width: usize,
-    height: usize,
-) -> (Vec<Vec<Point>>, Vec<Vec<Point>>) {
-    let fill = marching_squares_contours(mask, width, height);
-    let ring = outline_mask(mask, width, height);
-    let outline = marching_squares_contours(&ring, width, height);
-    (fill, outline)
-}
-
 /// Darken outline color slightly for visual separation.
 pub fn outline_color(color: (u8, u8, u8, u8)) -> (u8, u8, u8, u8) {
     (
@@ -99,20 +85,5 @@ mod tests {
             .count();
         assert!(ring.iter().any(|&v| v));
         assert!(fill_count < mask.iter().filter(|&&v| v).count());
-    }
-
-    #[test]
-    fn extract_layers_non_empty() {
-        let w = 12;
-        let h = 12;
-        let mut mask = vec![false; w * h];
-        for y in 3..9 {
-            for x in 3..9 {
-                mask[y * w + x] = true;
-            }
-        }
-        let (fill, outline) = extract_logo_layers(&mask, w, h);
-        assert!(!fill.is_empty());
-        assert!(!outline.is_empty());
     }
 }

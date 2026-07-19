@@ -1,24 +1,36 @@
 [package]
 name = "img2svg"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2024"
-description = "A rust native image to SVG converter in CLI/MCP/Library"
+description = "High-performance Rust image-to-SVG converter: vectorize PNG, JPEG, GIF, WebP, BMP, TIFF to scalable SVG with cubic Bezier curves, edge-aware k-means quantization, and Potrace-style optimization. Use as a CLI tool, Rust library, or MCP server for AI assistants."
 authors = ["Ying Kit WONG"]
 license = "Apache-2.0"
 documentation = "https://docs.rs/img2svg"
 repository = "https://github.com/yingkitw/img2svg"
 homepage = "https://github.com/yingkitw/img2svg"
-keywords = ["image", "svg", "vectorization", "conversion", "mcp"]
+readme = "README.md"
+categories = ["graphics", "multimedia", "image-processing", "command-line-utilities", "visualization"]
+keywords = ["svg", "vectorization", "raster-to-vector", "image-conversion", "mcp"]
 default-run = "img2svg"
+exclude = [
+    ".github",
+    "examples/input",
+    "examples/output",
+    "examples/comparison.html",
+    "generate_test_images.py",
+    "*.png",
+    "*.jpg",
+    "*.svg",
+    "*.html",
+]
 
 [dependencies]
 image = "0.24"
 clap = { version = "4.0", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1.0", optional = true, features = ["derive"] }
+serde_json = { version = "1.0", optional = true }
 svg = "0.13"
 rgb = "0.8"
-petgraph = "0.6"
 thiserror = "1.0"
 anyhow = "1.0"
 rayon = "1.10"
@@ -26,7 +38,9 @@ rand = "0.10"
 
 [features]
 default = []
-mcp = []
+# Enables MCP server dependencies (serde, serde_json). Required by the
+# img2svg-mcp binary.
+mcp = ["dep:serde", "dep:serde_json"]
 
 [lib]
 name = "img2svg"
@@ -39,7 +53,17 @@ path = "src/main.rs"
 [[bin]]
 name = "img2svg-mcp"
 path = "src/mcp.rs"
-required-features = []
+required-features = ["mcp"]
+
+# Strip release binaries and optimize for size where the speed tradeoff is
+# acceptable. `opt-level = 3` keeps the vectorization pipeline fast; the
+# `strip = true` and LTO reduce the binary footprint for distribution.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
 
 [[bench]]
 name = "pipeline_comparison"

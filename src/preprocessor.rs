@@ -41,16 +41,6 @@ impl PreprocessOptions {
             iterations: 2,
         }
     }
-
-    /// Create options optimized for graphics
-    pub fn graphics() -> Self {
-        Self {
-            color_reduction: 0.0,
-            spatial_sigma: 2.0,
-            color_sigma: 20.0,
-            iterations: 1,
-        }
-    }
 }
 
 /// Apply preprocessing to image data

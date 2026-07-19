@@ -527,78 +527,6 @@ impl BezierFitter {
     }
 }
 
-/// Format Bézier curves as SVG path data.
-/// Uses `L` for near-linear curves and `C` for true curves to minimize SVG size.
-/// Merges consecutive collinear `L` segments into a single `L`.
-pub fn bezier_to_svg_path(curves: &[BezierCurve], closed: bool) -> String {
-    if curves.is_empty() {
-        return String::new();
-    }
-
-    let mut path = format!(
-        "M{},{}",
-        fmt_num(curves[0].start.x),
-        fmt_num(curves[0].start.y)
-    );
-
-    let mut i = 0;
-    while i < curves.len() {
-        let curve = &curves[i];
-        if is_linear_curve(curve) {
-            // Merge consecutive collinear L segments using distance-based check.
-            // This catches diagonal staircases from marching squares where
-            // cross-product fails due to pixel-grid stepping.
-            let start = &curves[i].start;
-            let mut end = &curve.end;
-            let mut j = i + 1;
-            while j < curves.len() {
-                let next = &curves[j];
-                if !is_linear_curve(next) {
-                    break;
-                }
-                // Check if ALL intermediate points lie within 1.5px of the
-                // line from start to next.end (distance-based collinear test)
-                let candidate_end = &next.end;
-                let dx = candidate_end.x - start.x;
-                let dy = candidate_end.y - start.y;
-                let line_len = (dx * dx + dy * dy).sqrt();
-                if line_len < 0.5 {
-                    end = candidate_end;
-                    j += 1;
-                    continue;
-                }
-                // Check current end point distance to the proposed line
-                let dist = ((end.y - start.y) * dx - (end.x - start.x) * dy).abs() / line_len;
-                if dist < 1.5 {
-                    end = candidate_end;
-                    j += 1;
-                } else {
-                    break;
-                }
-            }
-            path.push_str(&format!("L{},{}", fmt_num(end.x), fmt_num(end.y)));
-            i = j;
-        } else {
-            path.push_str(&format!(
-                "C{},{} {},{} {},{}",
-                fmt_num(curve.control1.x),
-                fmt_num(curve.control1.y),
-                fmt_num(curve.control2.x),
-                fmt_num(curve.control2.y),
-                fmt_num(curve.end.x),
-                fmt_num(curve.end.y),
-            ));
-            i += 1;
-        }
-    }
-
-    if closed {
-        path.push('Z');
-    }
-
-    path
-}
-
 /// Write a formatted number directly to a writer (avoids returning a String).
 fn fmt_num_to<W: Write>(writer: &mut W, v: f64) -> IoResult<()> {
     if (v - v.round()).abs() < 1e-4 {
@@ -611,8 +539,6 @@ fn fmt_num_to<W: Write>(writer: &mut W, v: f64) -> IoResult<()> {
 }
 
 /// Stream Bézier curves as SVG path data directly to a writer.
-/// Zero-allocation variant of `bezier_to_svg_path` — writes directly without
-/// building an intermediate string.
 pub fn bezier_to_svg_path_to<W: Write>(
     writer: &mut W,
     curves: &[BezierCurve],
@@ -701,16 +627,6 @@ pub fn is_linear_curve(curve: &BezierCurve) -> bool {
         .abs()
         / len;
     d1 < 1.0 && d2 < 1.0
-}
-
-/// Format a float compactly: integer if close to whole, else 2 decimal places trimmed.
-fn fmt_num(v: f64) -> String {
-    if (v - v.round()).abs() < 1e-4 {
-        format!("{}", v.round() as i64)
-    } else {
-        let s = format!("{:.2}", v);
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
-    }
 }
 
 /// Potrace-style corner optimization: collinearize nearly-linear cubics at sharp joins.
@@ -872,32 +788,6 @@ mod tests {
     }
 
     #[test]
-    fn test_bezier_to_svg_path() {
-        let curves = vec![BezierCurve {
-            start: Point { x: 0.0, y: 0.0 },
-            control1: Point { x: 5.0, y: 10.0 },
-            control2: Point { x: 10.0, y: 10.0 },
-            end: Point { x: 15.0, y: 0.0 },
-        }];
-        let path = bezier_to_svg_path(&curves, true);
-        assert!(path.starts_with("M0,0"));
-        assert!(path.contains("C5,10"));
-        assert!(path.ends_with('Z'));
-    }
-
-    #[test]
-    fn test_fmt_num_integer() {
-        assert_eq!(fmt_num(5.0), "5");
-        assert_eq!(fmt_num(5.0001), "5");
-    }
-
-    #[test]
-    fn test_fmt_num_decimal() {
-        assert_eq!(fmt_num(5.25), "5.25");
-        assert_eq!(fmt_num(5.10), "5.1");
-    }
-
-    #[test]
     fn test_control_point_clamping() {
         let fitter = BezierFitter::new(2.0);
         // Points in a small region — control points should be clamped
@@ -917,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bezier_to_svg_path_to_matches_string_version() {
+    fn test_bezier_to_svg_path_to_starts_with_m() {
         let fitter = BezierFitter::new(2.0);
         let points = vec![
             Point { x: 0.0, y: 0.0 },
@@ -927,13 +817,12 @@ mod tests {
         ];
         let curves = fitter.fit_path(&points, true);
 
-        let string_version = bezier_to_svg_path(&curves, true);
-
         let mut buf = Vec::new();
         bezier_to_svg_path_to(&mut buf, &curves, true).unwrap();
-        let writer_version = String::from_utf8(buf).unwrap();
+        let svg = String::from_utf8(buf).unwrap();
 
-        assert_eq!(string_version, writer_version);
+        assert!(svg.starts_with('M'));
+        assert!(svg.ends_with('Z'));
     }
 
     #[test]
@@ -944,14 +833,21 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_num_to_matches_fmt_num() {
-        let values = [0.0, 1.0, 1.5, 2.25, 10.0, 10.10, 10.01];
-        for &v in &values {
-            let expected = fmt_num(v);
+    fn test_fmt_num_to_compact_format() {
+        let cases = [
+            (0.0, "0"),
+            (1.0, "1"),
+            (1.5, "1.5"),
+            (2.25, "2.25"),
+            (10.0, "10"),
+            (10.10, "10.1"),
+            (10.01, "10.01"),
+        ];
+        for (v, expected) in cases {
             let mut buf = Vec::new();
             fmt_num_to(&mut buf, v).unwrap();
             let actual = String::from_utf8(buf).unwrap();
-            assert_eq!(actual, expected, "fmt_num mismatch for {}", v);
+            assert_eq!(actual, expected, "fmt_num_to mismatch for {}", v);
         }
     }
 

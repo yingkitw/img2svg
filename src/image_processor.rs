@@ -3,6 +3,7 @@ use rgb::RGBA8;
 
 /// Source color space of the loaded image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Tested in image_processor_tests; re-exported at crate root.
 pub enum ColorSpace {
     /// Standard sRGB or generic RGB.
     Rgb,
@@ -24,6 +25,7 @@ pub struct ImageData {
 /// R = 255 * (1 - C/255) * (1 - K/255)
 /// G = 255 * (1 - M/255) * (1 - K/255)
 /// B = 255 * (1 - Y/255) * (1 - K/255)
+#[allow(dead_code)] // Tested in image_processor_tests; re-exported at crate root.
 pub fn cmyk_to_rgb(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
     let c = c as f64 / 255.0;
     let m = m as f64 / 255.0;
@@ -43,6 +45,7 @@ pub fn cmyk_to_rgb(c: u8, m: u8, y: u8, k: u8) -> (u8, u8, u8) {
 
 /// Create `ImageData` from raw CMYK pixels (each pixel = 4 bytes: C, M, Y, K).
 /// Applies standard CMYK -> RGB conversion.
+#[allow(dead_code)] // Tested in image_processor_tests; re-exported at crate root.
 pub fn image_data_from_cmyk(cmyk_pixels: &[(u8, u8, u8, u8)], width: u32, height: u32) -> ImageData {
     let pixels: Vec<RGBA8> = cmyk_pixels
         .iter()
@@ -61,6 +64,7 @@ pub fn image_data_from_cmyk(cmyk_pixels: &[(u8, u8, u8, u8)], width: u32, height
 /// Try to detect the source color space of an image file by inspecting its bytes.
 /// For JPEG, checks the APP14 Adobe marker for CMYK (transform == 2).
 /// Falls back to `Rgb` for other formats.
+#[allow(dead_code)] // Tested in image_processor_tests; re-exported at crate root.
 pub fn detect_color_space(path: &std::path::Path) -> ColorSpace {
     use std::fs::read;
 
@@ -118,6 +122,7 @@ pub fn load_image(path: &std::path::Path) -> Result<ImageData> {
 pub struct GifFrame {
     pub image_data: ImageData,
     /// Frame delay in milliseconds.
+    #[allow(dead_code)] // Read via re-export at crate root.
     pub delay_ms: u32,
 }
 

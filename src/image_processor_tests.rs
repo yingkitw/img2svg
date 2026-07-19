@@ -1,7 +1,7 @@
 #[cfg(test)]
-mod tests {
-    use super::super::*;
-    use rgb::RGBA8;
+use super::*;
+#[cfg(test)]
+use rgb::RGBA8;
 
     fn create_test_image(width: u32, height: u32, pixels: Vec<RGBA8>) -> ImageData {
         ImageData {
@@ -329,4 +329,4 @@ mod tests {
         assert_eq!(detect_color_space(Path::new("image.png")), ColorSpace::Rgb);
         assert_eq!(detect_color_space(Path::new("image.gif")), ColorSpace::Rgb);
     }
-}
+

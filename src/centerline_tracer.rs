@@ -4,7 +4,7 @@ use crate::vectorizer::Point;
 
 /// Extract open centerline polylines from a binary mask (true = foreground).
 pub fn trace_centerlines(mask: &[bool], width: usize, height: usize) -> Vec<Vec<Point>> {
-    let mut skel = skeletonize(mask, width, height);
+    let skel = skeletonize(mask, width, height);
     let mut used = vec![false; skel.len()];
     let mut paths = Vec::new();
 

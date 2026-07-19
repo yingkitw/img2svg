@@ -1,8 +1,9 @@
 #[cfg(test)]
-mod tests {
-    use super::super::*;
-    use crate::image_processor::ImageData;
-    use rgb::RGBA8;
+use super::*;
+#[cfg(test)]
+use crate::image_processor::ImageData;
+#[cfg(test)]
+use rgb::RGBA8;
 
     fn create_test_mask(width: usize, height: usize, pattern: &str) -> Vec<bool> {
         let mut mask = vec![false; width * height];
@@ -635,4 +636,4 @@ mod tests {
             "Expected at least 2 subpaths (outer + hole)"
         );
     }
-}
+

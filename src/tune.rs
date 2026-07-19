@@ -18,6 +18,8 @@ const GRID: &[(usize, u8, bool)] = &[
 /// Generate an HTML page comparing parameter combinations for live review.
 pub fn generate_tune_html(input: &Path, output: &Path) -> Result<()> {
     let image = load_image(input)?;
+    // `writeln!` mutably borrows the file handle internally.
+    #[allow(unused_mut)]
     let mut file = File::create(output)?;
 
     writeln!(

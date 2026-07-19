@@ -149,7 +149,6 @@ pub fn slic_superpixels(image_data: &ImageData, num_superpixels: usize, iteratio
     let compactness = 10.0f64;
 
     let mut centers: Vec<(f64, f64, f64, f64, f64)> = Vec::new();
-    let mut label = 0u32;
     for y in (step / 2..h).step_by(step.max(1)) {
         for x in (step / 2..w).step_by(step.max(1)) {
             let p = image_data.pixels[y * w + x];
@@ -160,7 +159,6 @@ pub fn slic_superpixels(image_data: &ImageData, num_superpixels: usize, iteratio
                 p.g as f64,
                 p.b as f64,
             ));
-            label += 1;
             if centers.len() >= k {
                 break;
             }
@@ -240,7 +238,6 @@ pub fn slic_superpixels(image_data: &ImageData, num_superpixels: usize, iteratio
 
 /// Build quantized image from superpixel labels (mean color per label).
 pub fn quantize_from_labels(image_data: &ImageData, labels: &[u32]) -> ImageData {
-    let w = image_data.width as usize;
     let mut sums: HashMap<u32, (u64, u64, u64, u64, u64)> = HashMap::new();
 
     for (idx, &lab) in labels.iter().enumerate() {

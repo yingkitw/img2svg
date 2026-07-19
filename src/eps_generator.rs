@@ -217,6 +217,7 @@ pub fn write_enhanced_ai(data: &EnhancedVectorData, output_path: &Path) -> Resul
 
 /// Output format for enhanced pipeline file writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
 pub enum EnhancedOutputFormat {
     #[default]
     Svg,
@@ -227,6 +228,7 @@ pub enum EnhancedOutputFormat {
 
 impl EnhancedOutputFormat {
     /// Infer format from a file path extension (`svg` default).
+    #[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
     pub fn from_path(path: &Path) -> Self {
         match path
             .extension()
@@ -239,6 +241,7 @@ impl EnhancedOutputFormat {
             _ => Self::Svg,
         }
     }
+    #[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
     pub fn extension(self) -> &'static str {
         match self {
             Self::Svg => "svg",
@@ -250,6 +253,7 @@ impl EnhancedOutputFormat {
 }
 
 /// Write enhanced vector data using the requested output format.
+#[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
 pub fn write_enhanced_output(
     data: &EnhancedVectorData,
     output_path: &Path,
