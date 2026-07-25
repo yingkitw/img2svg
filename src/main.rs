@@ -226,6 +226,66 @@ fn process_file(
     Ok(())
 }
 
+/// Combine every supported image in `input_dir` into a single multi-page PDF.
+///
+/// Triggered by `img2svg -i dir/ -o combined.pdf` (input is a directory, output
+/// is a single `.pdf` file). Each image becomes one page using its own dimensions.
+fn combine_directory_to_pdf(input_dir: &Path, output_path: &Path, cli: &Cli) -> Result<()> {
+    let entries: Vec<_> = std::fs::read_dir(input_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file() && is_supported_image(&e.path()))
+        .collect();
+
+    let total = entries.len();
+    eprintln!(
+        "Combining {} images from {} into multi-page PDF {}...",
+        total,
+        input_dir.display(),
+        output_path.display()
+    );
+
+    let options = enhanced_options(cli);
+    let mut pages: Vec<EnhancedVectorData> = Vec::with_capacity(total);
+    let mut converted = 0u32;
+    let mut errors = 0u32;
+
+    for entry in &entries {
+        let path = entry.path();
+        eprintln!("[{}/{}] {}", converted + errors + 1, total, path.display());
+        let result = (|| -> Result<()> {
+            let mut image_data = image_processor::load_image(&path)?;
+            image_data = image_processor::resize_if_needed(image_data, cli.max_size);
+            if cli.preprocess {
+                let opts = PreprocessOptions::photo();
+                image_data = preprocess(&image_data, &opts)?;
+            }
+            let data = vectorize_enhanced(&image_data, &options)?;
+            pages.push(data);
+            Ok(())
+        })();
+        match result {
+            Ok(()) => converted += 1,
+            Err(e) => {
+                eprintln!("  Error: {}", e);
+                errors += 1;
+            }
+        }
+    }
+
+    if pages.is_empty() {
+        anyhow::bail!("no images converted; PDF not written");
+    }
+
+    eps_generator::write_multi_page_pdf(&pages, output_path)?;
+    println!(
+        "Multi-page PDF written to {} ({} pages, {} errors).",
+        output_path.display(),
+        converted,
+        errors
+    );
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = parse_args(std::env::args());
 
@@ -245,6 +305,23 @@ fn main() -> Result<()> {
     }
 
     if cli.input.is_dir() {
+        // Multi-page PDF combine mode: input is a directory and the output path is
+        // a single .pdf file (not an existing directory). Combines all images into
+        // one multi-page PDF, one image per page. Triggered by an explicit
+        // `--format pdf` or by a `.pdf` output extension.
+        if let Some(out) = &cli.output {
+            let out_ext_is_pdf = out
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("pdf"))
+                .unwrap_or(false);
+            let effective_format_is_pdf =
+                cli.format == OutputFormat::Pdf || out_ext_is_pdf;
+            if effective_format_is_pdf && out_ext_is_pdf && !out.is_dir() {
+                return combine_directory_to_pdf(&cli.input, out, &cli);
+            }
+        }
+
         // Batch mode: process all supported images in directory
         let output_dir = cli.output.clone().unwrap_or_else(|| cli.input.clone());
         if !output_dir.exists() {

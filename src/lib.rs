@@ -86,7 +86,7 @@ pub use image_filters::{
 };
 pub use eps_generator::{
     write_enhanced_ai, write_enhanced_eps, write_enhanced_output, write_enhanced_pdf,
-    write_vectorized_eps, EnhancedOutputFormat,
+    write_multi_page_pdf, write_vectorized_eps, EnhancedOutputFormat,
 };
 pub use extra_backends::{
     write_enhanced_dxf, write_enhanced_geojson, write_enhanced_gimppath,
@@ -319,6 +319,72 @@ pub fn batch_convert_enhanced(
             }
         }
     }
+
+    Ok(BatchConvertSummary {
+        total,
+        converted,
+        errors,
+        entries: results,
+    })
+}
+
+/// Convert all supported images in `input_dir` into a single multi-page PDF.
+///
+/// Each image is vectorized with the enhanced Bézier pipeline and becomes one
+/// page sized to its own dimensions. This is the library counterpart of
+/// `img2svg -i dir/ -o combined.pdf`.
+pub fn batch_convert_to_pdf(
+    input_dir: &std::path::Path,
+    output_path: &std::path::Path,
+    options: &EnhancedOptions,
+    max_size: u32,
+) -> Result<BatchConvertSummary> {
+    let entries: Vec<_> = std::fs::read_dir(input_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file() && is_supported_image(&e.path()))
+        .collect();
+
+    let total = entries.len();
+    let mut converted = 0usize;
+    let mut errors = 0usize;
+    let mut results = Vec::with_capacity(total);
+    let mut pages: Vec<EnhancedVectorData> = Vec::with_capacity(total);
+
+    for entry in entries {
+        let input_path = entry.path();
+        let outcome = (|| -> Result<()> {
+            let image_data = load_image(&input_path)?;
+            let image_data = image_processor::resize_if_needed(image_data, max_size);
+            let data = vectorize_enhanced(&image_data, options)?;
+            pages.push(data);
+            Ok(())
+        })();
+        match outcome {
+            Ok(()) => {
+                converted += 1;
+                results.push(BatchConvertEntry {
+                    input: input_path,
+                    output: output_path.to_path_buf(),
+                    success: true,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                errors += 1;
+                results.push(BatchConvertEntry {
+                    input: input_path,
+                    output: output_path.to_path_buf(),
+                    success: false,
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    if pages.is_empty() {
+        anyhow::bail!("no images converted; PDF not written");
+    }
+    eps_generator::write_multi_page_pdf(&pages, output_path)?;
 
     Ok(BatchConvertSummary {
         total,

@@ -5,8 +5,8 @@
 //! to SVG format.
 
 use img2svg::{
-    batch_convert_enhanced, convert_enhanced_data, generate_svg, load_image, vectorize,
-    EnhancedOptions, EnhancedOutputFormat,
+    batch_convert_enhanced, batch_convert_to_pdf, convert_enhanced_data, generate_svg, load_image,
+    vectorize, EnhancedOptions, EnhancedOutputFormat,
 };
 use img2svg::image_processor::resize_if_needed;
 use serde_json::{json, Map, Value};
@@ -503,6 +503,35 @@ impl Img2SvgMcpServer {
                             },
                             "required": ["input_dir", "output_dir"]
                         }
+                    },
+                    {
+                        "name": "convert_image_directory_to_pdf",
+                        "description": "Batch convert all supported images in a directory into a single multi-page PDF. Each image becomes one page sized to its own dimensions (matches `img2svg -i dir/ -o combined.pdf`).",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "input_dir": {
+                                    "type": "string",
+                                    "description": "Directory containing input images"
+                                },
+                                "output_path": {
+                                    "type": "string",
+                                    "description": "Path to the output multi-page PDF file"
+                                },
+                                "num_colors": shared["num_colors"],
+                                "preprocess": shared["preprocess"],
+                                "preset": shared["preset"],
+                                "centerline": shared["centerline"],
+                                "logo_mode": shared["logo_mode"],
+                                "superpixel": shared["superpixel"],
+                                "optimize_corners": shared["optimize_corners"],
+                                "optimize_curves": shared["optimize_curves"],
+                                "min_region_area": shared["min_region_area"],
+                                "max_size": shared["max_size"],
+                                "progress_token": shared["progress_token"]
+                            },
+                            "required": ["input_dir", "output_path"]
+                        }
                     }
                 ]
             })),
@@ -687,6 +716,93 @@ impl Img2SvgMcpServer {
                     },
                 }
             }
+            "convert_image_directory_to_pdf" => {
+                let input_dir = args.get("input_dir").and_then(|v| v.as_str());
+                let output_path = args.get("output_path").and_then(|v| v.as_str());
+
+                match (input_dir, output_path) {
+                    (Some(input), Some(output)) => {
+                        let tool_args = ConvertToolArgs::parse(&args, Some(output));
+                        let progress_token = tool_args.progress_token.clone();
+                        let opts = tool_args.enhanced_options();
+
+                        match batch_convert_to_pdf(
+                            Path::new(input),
+                            Path::new(output),
+                            &opts,
+                            tool_args.max_size,
+                        ) {
+                            Ok(summary) => {
+                                if let Some(ref token) = progress_token {
+                                    let _ = send_progress_notification(
+                                        &mut io::stdout(),
+                                        token,
+                                        summary.converted as f64,
+                                        summary.total.max(1) as f64,
+                                    );
+                                }
+                                let output_size = std::fs::metadata(output)
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                let files: Vec<Value> = summary
+                                    .entries
+                                    .iter()
+                                    .map(|e| {
+                                        json!({
+                                            "input": e.input.to_string_lossy(),
+                                            "output": e.output.to_string_lossy(),
+                                            "success": e.success,
+                                            "error": e.error
+                                        })
+                                    })
+                                    .collect();
+                                McpResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id,
+                                    result: Some(json!({
+                                        "content": [{
+                                            "type": "text",
+                                            "text": format!(
+                                                "Multi-page PDF written: {} pages, {} errors (of {} images)",
+                                                summary.converted, summary.errors, summary.total
+                                            )
+                                        }],
+                                        "details": {
+                                            "pipeline": "enhanced",
+                                            "output_format": "pdf",
+                                            "output_size_bytes": output_size,
+                                            "output_path": output,
+                                            "total": summary.total,
+                                            "converted": summary.converted,
+                                            "errors": summary.errors,
+                                            "files": files
+                                        }
+                                    })),
+                                    error: None,
+                                }
+                            }
+                            Err(e) => McpResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id,
+                                result: None,
+                                error: Some(McpError {
+                                    code: -32000,
+                                    message: format!("Multi-page PDF batch failed: {}", e),
+                                }),
+                            },
+                        }
+                    }
+                    _ => McpResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: None,
+                        error: Some(McpError {
+                            code: -32602,
+                            message: "Missing required parameters: input_dir and output_path".to_string(),
+                        }),
+                    },
+                }
+            }
             _ => McpResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
@@ -750,9 +866,10 @@ mod tests {
         assert!(r.error.is_none());
         let body = r.result.unwrap();
         let tools = body["tools"].as_array().expect("tools array");
-        assert_eq!(tools.len(), 2);
+        assert_eq!(tools.len(), 3);
         assert_eq!(tools[0]["name"], "convert_image_to_svg");
         assert_eq!(tools[1]["name"], "convert_image_directory");
+        assert_eq!(tools[2]["name"], "convert_image_directory_to_pdf");
         let props = tools[0]["inputSchema"]["properties"].as_object().unwrap();
         assert!(props.contains_key("legacy"));
         assert!(props.contains_key("preset"));
@@ -761,6 +878,9 @@ mod tests {
             .as_array()
             .expect("required");
         assert!(required.contains(&json!("input_path")));
+        let pdf_required = tools[2]["inputSchema"]["required"].as_array().expect("required");
+        assert!(pdf_required.contains(&json!("input_dir")));
+        assert!(pdf_required.contains(&json!("output_path")));
     }
 
     #[test]
@@ -928,6 +1048,55 @@ mod tests {
         let res = r.result.unwrap();
         assert_eq!(res["details"]["output_format"], "eps");
         let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_convert_directory_to_pdf() {
+        let input_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input");
+        if !input_dir.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_dir_pdf_test.pdf");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_directory_to_pdf".to_string(),
+                arguments: json!({
+                    "input_dir": input_dir.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                    "preprocess": false,
+                }),
+            },
+            json!(103),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let pdf = std::fs::read_to_string(&out).expect("read pdf");
+        assert!(pdf.starts_with("%PDF-1.4"));
+        assert!(pdf.contains("/Count"));
+        let res = r.result.unwrap();
+        assert_eq!(res["details"]["pipeline"], "enhanced");
+        assert_eq!(res["details"]["output_format"], "pdf");
+        assert!(res["details"]["output_size_bytes"].as_u64().unwrap() > 0);
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_directory_to_pdf_missing_params_errors() {
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_directory_to_pdf".to_string(),
+                arguments: json!({}),
+            },
+            json!(104),
+        );
+        assert!(r.error.is_some());
+        assert!(r.result.is_none());
     }
 
     #[test]

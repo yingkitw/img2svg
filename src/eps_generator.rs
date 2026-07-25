@@ -1,6 +1,6 @@
 //! EPS and minimal PDF export from vector data.
 
-use crate::bezier_fitter::{bezier_to_svg_path_to, BezierCurve};
+use crate::bezier_fitter::{bezier_to_svg_path_to, is_linear_curve, BezierCurve};
 use crate::enhanced_vectorizer::{write_enhanced_svg, EnhancedVectorData};
 use crate::image_processor::Result;
 use crate::svg_generator::color_with_alpha;
@@ -173,40 +173,174 @@ fn write_svg_override_eps<W: Write>(writer: &mut W, svg: &str, height: u32) -> R
 
 /// Minimal PDF wrapper (single page, path content from EPS-style ops).
 pub fn write_enhanced_pdf(data: &EnhancedVectorData, output_path: &Path) -> Result<()> {
-    let eps_path = output_path.with_extension("eps.tmp");
-    write_enhanced_eps(data, &eps_path)?;
-    let eps = std::fs::read_to_string(&eps_path)?;
-    let _ = std::fs::remove_file(&eps_path);
+    write_multi_page_pdf(std::slice::from_ref(data), output_path)
+}
+
+/// Write one PDF content stream for an enhanced page (background + filled paths).
+///
+/// Coordinates are y-flipped from image space (top-left) to PDF space (bottom-left).
+fn enhanced_page_content_to<W: Write>(writer: &mut W, data: &EnhancedVectorData) -> Result<()> {
+    let height = data.height;
+
+    // Background rectangle fills the whole page.
+    let (bg_hex, _) = color_with_alpha(data.background_color);
+    let bg = parse_hex(&bg_hex);
+    writeln!(writer, "q")?;
+    writeln!(writer, "{:.3} {:.3} {:.3} rg", bg.0, bg.1, bg.2)?;
+    writeln!(writer, "0 0 {} {} re f", data.width, data.height)?;
+    writeln!(writer, "Q")?;
+
+    for path in &data.paths {
+        let (hex, _) = color_with_alpha(path.color);
+        let rgb = parse_hex(&hex);
+        writeln!(writer, "q")?;
+        writeln!(writer, "{:.3} {:.3} {:.3} rg", rgb.0, rgb.1, rgb.2)?;
+        if path.stroke_only {
+            writeln!(writer, "1 w")?;
+        }
+        if let Some(ref svg) = path.svg_override {
+            write_svg_override_pdf(writer, svg, height)?;
+        } else {
+            write_curves_pdf(writer, &path.curves, height)?;
+        }
+        if path.stroke_only {
+            writeln!(writer, "S")?;
+        } else {
+            writeln!(writer, "f")?;
+        }
+        writeln!(writer, "Q")?;
+    }
+    Ok(())
+}
+
+/// Emit cubic Bézier curves as a PDF path (m/l/c/h operators, y-flipped).
+fn write_curves_pdf<W: Write>(writer: &mut W, curves: &[BezierCurve], height: u32) -> Result<()> {
+    if curves.is_empty() {
+        return Ok(());
+    }
+    let first = &curves[0];
+    writeln!(
+        writer,
+        "{:.2} {:.2} m",
+        first.start.x,
+        flip_y(first.start.y, height)
+    )?;
+    for curve in curves {
+        if is_linear_curve(curve) {
+            writeln!(
+                writer,
+                "{:.2} {:.2} l",
+                curve.end.x,
+                flip_y(curve.end.y, height)
+            )?;
+        } else {
+            writeln!(
+                writer,
+                "{:.2} {:.2} {:.2} {:.2} {:.2} {:.2} c",
+                curve.control1.x,
+                flip_y(curve.control1.y, height),
+                curve.control2.x,
+                flip_y(curve.control2.y, height),
+                curve.end.x,
+                flip_y(curve.end.y, height),
+            )?;
+        }
+    }
+    writeln!(writer, "h")?;
+    Ok(())
+}
+
+fn write_svg_override_pdf<W: Write>(writer: &mut W, svg: &str, height: u32) -> Result<()> {
+    for token in svg.split_whitespace() {
+        if let Some(rest) = token.strip_prefix('M') {
+            let parts: Vec<f64> = rest.split(',').filter_map(|v| v.parse().ok()).collect();
+            if parts.len() >= 2 {
+                writeln!(writer, "{:.2} {:.2} m", parts[0], flip_y(parts[1], height))?;
+            }
+        } else if let Some(rest) = token.strip_prefix('L') {
+            let parts: Vec<f64> = rest.split(',').filter_map(|v| v.parse().ok()).collect();
+            if parts.len() >= 2 {
+                writeln!(writer, "{:.2} {:.2} l", parts[0], flip_y(parts[1], height))?;
+            }
+        } else if token == "Z" {
+            writeln!(writer, "h")?;
+        }
+    }
+    Ok(())
+}
+
+/// Write a multi-page PDF where each [`EnhancedVectorData`] becomes one page.
+///
+/// Each page's `MediaBox` matches its source image dimensions. The cross-reference
+/// table uses correct byte offsets so strict PDF readers accept the output.
+pub fn write_multi_page_pdf(pages: &[EnhancedVectorData], output_path: &Path) -> Result<()> {
+    use std::fmt::Write as _;
+    if pages.is_empty() {
+        anyhow::bail!("cannot write a multi-page PDF with zero pages");
+    }
+
+    let n = pages.len();
+    let mut buf = String::new();
+    let mut offsets: Vec<u64> = Vec::with_capacity(2 + 2 * n);
+
+    buf.push_str("%PDF-1.4\n");
+    // Binary marker comment so readers treat the file as binary.
+    buf.push_str("%\u{00e2}\u{00e3}\u{00cf}\u{00d3}\n");
+
+    // Object 1: Catalog
+    offsets.push(buf.len() as u64);
+    buf.push_str("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+    // Object 2: Pages tree
+    let kids: Vec<String> = (0..n).map(|i| format!("{} 0 R", 3 + i * 2)).collect();
+    offsets.push(buf.len() as u64);
+    write!(
+        buf,
+        "2 0 obj\n<< /Type /Pages /Kids [{}] /Count {} >>\nendobj\n",
+        kids.join(" "),
+        n
+    )?;
+
+    // For each page: a Page object (parent = Pages) + a Content stream object.
+    for (i, data) in pages.iter().enumerate() {
+        let page_num = 3 + i * 2;
+        let content_num = 4 + i * 2;
+
+        let mut content = Vec::new();
+        enhanced_page_content_to(&mut content, data)?;
+        let content_str = String::from_utf8_lossy(&content);
+
+        offsets.push(buf.len() as u64);
+        write!(
+            buf,
+            "{} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Contents {} 0 R >>\nendobj\n",
+            page_num, data.width, data.height, content_num
+        )?;
+
+        offsets.push(buf.len() as u64);
+        write!(
+            buf,
+            "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+            content_num,
+            content_str.len(),
+            content_str
+        )?;
+    }
+
+    // Cross-reference table.
+    let xref_offset = buf.len() as u64;
+    let size = 2 + 2 * n + 1; // objects 0..=highest, highest = 2 + 2n
+    write!(buf, "xref\n0 {}\n", size)?;
+    buf.push_str("0000000000 65535 f \n");
+    for off in &offsets {
+        writeln!(buf, "{:010} 00000 n ", off)?;
+    }
+    write!(buf, "trailer\n<< /Size {} /Root 1 0 R >>\n", size)?;
+    write!(buf, "startxref\n{}\n", xref_offset)?;
+    buf.push_str("%%EOF");
 
     let mut file = File::create(output_path)?;
-    writeln!(&mut file, "%PDF-1.4")?;
-    writeln!(&mut file, "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj")?;
-    writeln!(
-        &mut file,
-        "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj"
-    )?;
-    writeln!(
-        &mut file,
-        "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 {} {}] /Contents 4 0 R >> endobj",
-        data.width, data.height
-    )?;
-    let stream = format!(
-        "q\n{} W {} H scale\n{} Q\n",
-        data.width,
-        data.height,
-        eps.lines().skip(5).collect::<Vec<_>>().join("\n")
-    );
-    writeln!(
-        &mut file,
-        "4 0 obj << /Length {} >> stream",
-        stream.len()
-    )?;
-    write!(&mut file, "{}", stream)?;
-    writeln!(&mut file, "endstream endobj")?;
-    writeln!(&mut file, "xref")?;
-    writeln!(&mut file, "trailer << /Size 5 /Root 1 0 R >>")?;
-    writeln!(&mut file, "startxref")?;
-    writeln!(&mut file, "%%EOF")?;
+    file.write_all(buf.as_bytes())?;
     Ok(())
 }
 
@@ -276,5 +410,113 @@ fn parse_hex(hex: &str) -> (f64, f64, f64) {
         (r, g, b)
     } else {
         (0.0, 0.0, 0.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::enhanced_vectorizer::{EnhancedPath, EnhancedVectorData};
+
+    fn sample_page(w: u32, h: u32) -> EnhancedVectorData {
+        EnhancedVectorData {
+            width: w,
+            height: h,
+            background_color: (255, 255, 255, 255),
+            paths: vec![EnhancedPath {
+                curves: vec![BezierCurve {
+                    start: Point { x: 1.0, y: 1.0 },
+                    control1: Point { x: 1.0, y: h as f64 - 1.0 },
+                    control2: Point { x: w as f64 - 1.0, y: h as f64 - 1.0 },
+                    end: Point { x: w as f64 - 1.0, y: 1.0 },
+                }],
+                color: (200, 30, 30, 255),
+                area: 100,
+                svg_override: None,
+                stroke_only: false,
+            }],
+        }
+    }
+
+    #[test]
+    fn test_single_page_pdf_structure() {
+        let data = sample_page(20, 20);
+        let path = std::path::PathBuf::from("/tmp/img2svg_single.pdf");
+        write_enhanced_pdf(&data, &path).unwrap();
+        let s = std::fs::read_to_string(&path).unwrap();
+        assert!(s.starts_with("%PDF-1.4"));
+        assert!(s.contains("/Type /Catalog"));
+        assert!(s.contains("/Type /Pages"));
+        assert!(s.contains("/Type /Page"));
+        assert!(s.contains("/MediaBox [0 0 20 20]"));
+        assert!(s.contains("/Count 1"));
+        assert!(s.contains("startxref"));
+        assert!(s.trim_end().ends_with("%%EOF"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_multi_page_pdf_count_and_mediaboxes() {
+        let pages = vec![sample_page(10, 20), sample_page(30, 40), sample_page(50, 60)];
+        let path = std::path::PathBuf::from("/tmp/img2svg_multi.pdf");
+        write_multi_page_pdf(&pages, &path).unwrap();
+        let s = std::fs::read_to_string(&path).unwrap();
+        assert!(s.contains("/Count 3"));
+        assert!(s.contains("/MediaBox [0 0 10 20]"));
+        assert!(s.contains("/MediaBox [0 0 30 40]"));
+        assert!(s.contains("/MediaBox [0 0 50 60]"));
+        // Three pages → three Kids references. Match "/Type /Page " (trailing
+        // space) so it doesn't also count the "/Type /Pages" tree object.
+        assert_eq!(s.matches("/Type /Page /Parent").count(), 3);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_multi_page_pdf_xref_offsets_are_valid() {
+        let pages = vec![sample_page(15, 15), sample_page(25, 25)];
+        let path = std::path::PathBuf::from("/tmp/img2svg_xref.pdf");
+        write_multi_page_pdf(&pages, &path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let s = std::fs::read_to_string(&path).unwrap();
+        // Every recorded xref offset must point at "N 0 obj".
+        for line in s.lines() {
+            if let Some(rest) = line.strip_suffix(" 00000 n ") {
+                if rest.chars().all(|c| c.is_ascii_digit()) {
+                    let off: usize = rest.parse().unwrap();
+                    let snippet = &String::from_utf8_lossy(&bytes[off..]);
+                    assert!(
+                        snippet.starts_with(|c: char| c.is_ascii_digit()),
+                        "xref offset {off} does not point at an object"
+                    );
+                    assert!(snippet.contains(" obj"));
+                }
+            }
+        }
+        // startxref value should point at "xref".
+        let sx = s.find("startxref\n").unwrap();
+        let after = &s[sx + "startxref\n".len()..];
+        let val: usize = after.lines().next().unwrap().parse().unwrap();
+        assert_eq!(&String::from_utf8_lossy(&bytes[val..val + 4]), "xref");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_multi_page_pdf_empty_errors() {
+        let path = std::path::PathBuf::from("/tmp/img2svg_empty.pdf");
+        let res = write_multi_page_pdf(&[], &path);
+        assert!(res.is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_page_content_y_flips_paths() {
+        // A path drawn near the top (y=1) of a 20-tall image should appear with
+        // pdf y close to the bottom (≈ 19) after the y-flip.
+        let data = sample_page(20, 20);
+        let mut out = Vec::new();
+        enhanced_page_content_to(&mut out, &data).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        // start (1,1) → pdf y = 20 - 1 = 19
+        assert!(s.contains("1.00 19.00 m"));
     }
 }

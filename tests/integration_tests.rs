@@ -1,8 +1,9 @@
 // Integration tests for img2svg
 use img2svg::{
-    batch_convert_enhanced, convert, convert_enhanced, convert_enhanced_to_svg_string,
-    convert_to_svg_string, generate_enhanced_svg, vectorize_enhanced, write_enhanced_eps,
-    write_enhanced_svg, ConversionOptions, EnhancedOptions, EnhancedOutputFormat,
+    batch_convert_enhanced, batch_convert_to_pdf, convert, convert_enhanced,
+    convert_enhanced_to_svg_string, convert_to_svg_string, generate_enhanced_svg,
+    vectorize_enhanced, write_enhanced_eps, write_enhanced_pdf, write_enhanced_svg,
+    write_multi_page_pdf, ConversionOptions, EnhancedOptions, EnhancedOutputFormat,
 };
 use img2svg::image_processor::{load_image, quantize_colors};
 use img2svg::svg_generator::{generate_svg, generate_svg_advanced};
@@ -772,4 +773,86 @@ fn test_batch_convert_enhanced_examples_input() {
     assert!(summary.converted >= 5);
     assert!(output_dir.join("simple.svg").exists());
     let _ = fs::remove_dir_all(&output_dir);
+}
+
+#[test]
+fn test_single_page_pdf_export() {
+    let test_img = PathBuf::from("/tmp/test_pdf_single.png");
+    let test_pdf = PathBuf::from("/tmp/test_pdf_single.pdf");
+    create_test_png(&test_img, 30, 30, "circle");
+    let image_data = load_image(&test_img).expect("load");
+    let opts = EnhancedOptions {
+        num_colors: 8,
+        preprocess: false,
+        ..Default::default()
+    };
+    let data = vectorize_enhanced(&image_data, &opts).expect("vectorize");
+    write_enhanced_pdf(&data, &test_pdf).expect("write pdf");
+    let pdf = fs::read_to_string(&test_pdf).expect("read pdf");
+    assert!(pdf.starts_with("%PDF-1.4"));
+    assert!(pdf.contains("/Type /Catalog"));
+    assert!(pdf.contains("/MediaBox [0 0 30 30]"));
+    assert!(pdf.contains("/Count 1"));
+    assert!(pdf.trim_end().ends_with("%%EOF"));
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&test_pdf);
+}
+
+#[test]
+fn test_multi_page_pdf_from_multiple_pages() {
+    let mut pages = Vec::new();
+    for (w, h) in [(20u32, 30u32), (40, 50), (60, 10)] {
+        let test_img = PathBuf::from(format!("/tmp/test_multipage_{w}x{h}.png"));
+        create_test_png(&test_img, w, h, "circle");
+        let image_data = load_image(&test_img).expect("load");
+        let opts = EnhancedOptions {
+            num_colors: 4,
+            preprocess: false,
+            ..Default::default()
+        };
+        pages.push(vectorize_enhanced(&image_data, &opts).expect("vectorize"));
+        let _ = fs::remove_file(&test_img);
+    }
+    let out = PathBuf::from("/tmp/test_multi_page.pdf");
+    write_multi_page_pdf(&pages, &out).expect("write multi-page pdf");
+    let pdf = fs::read_to_string(&out).expect("read pdf");
+    assert!(pdf.contains("/Count 3"));
+    assert!(pdf.contains("/MediaBox [0 0 20 30]"));
+    assert!(pdf.contains("/MediaBox [0 0 40 50]"));
+    assert!(pdf.contains("/MediaBox [0 0 60 10]"));
+    assert_eq!(pdf.matches("/Type /Page /Parent").count(), 3);
+    assert!(pdf.trim_end().ends_with("%%EOF"));
+    let _ = fs::remove_file(&out);
+}
+
+#[test]
+fn test_batch_convert_to_pdf_directory() {
+    let input_dir = PathBuf::from("/tmp/img2svg_pdf_batch_in");
+    let _ = fs::remove_dir_all(&input_dir);
+    fs::create_dir_all(&input_dir).unwrap();
+    // Two distinctly sized images so we can verify both MediaBoxes appear.
+    for (name, w, h) in [("a", 24u32, 24u32), ("b", 36, 18)] {
+        let p = input_dir.join(format!("{name}.png"));
+        create_test_png(&p, w, h, "circle");
+    }
+    let out = PathBuf::from("/tmp/img2svg_pdf_batch_out.pdf");
+    let _ = fs::remove_file(&out);
+
+    let opts = EnhancedOptions {
+        num_colors: 4,
+        preprocess: false,
+        ..Default::default()
+    };
+    let summary = batch_convert_to_pdf(&input_dir, &out, &opts, 4096).expect("batch pdf");
+    assert_eq!(summary.total, 2);
+    assert_eq!(summary.converted, 2);
+    assert_eq!(summary.errors, 0);
+    assert!(out.exists());
+    let pdf = fs::read_to_string(&out).expect("read pdf");
+    assert!(pdf.contains("/Count 2"));
+    assert!(pdf.contains("/MediaBox [0 0 24 24]"));
+    assert!(pdf.contains("/MediaBox [0 0 36 18]"));
+
+    let _ = fs::remove_dir_all(&input_dir);
+    let _ = fs::remove_file(&out);
 }

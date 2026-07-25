@@ -42,6 +42,12 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 
 ### MCP Tool (`convert_image_directory`)
 - Batch convert all supported images in `input_dir` → `output_dir` (enhanced pipeline only)
+
+### MCP Tool (`convert_image_directory_to_pdf`)
+- Combine all supported images in `input_dir` → one multi-page PDF at `output_path` (enhanced pipeline only)
+- `input_dir`, `output_path` (required; output must be a `.pdf` file path, not a directory)
+- Same optional flags as `convert_image_directory` (no `output_format`)
+- Response `details`: `pipeline`, `output_format` (`pdf`), `output_size_bytes`, `output_path`, `total`, `converted`, `errors`, `files`
 - `input_dir`, `output_dir` (required); same optional flags as single-file (except `legacy`)
 - Response `details`: `total`, `converted`, `errors`, `files[]` with per-file `success` / `error`
 
@@ -50,6 +56,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 - Background color auto-detected and rendered as `<rect>`
 - One `<path>` per non-background color, using merged subpaths
 - ViewBox and dimensions match input image
+- **Multi-page PDF** (`write_multi_page_pdf`, `batch_convert_to_pdf`, CLI `img2svg -i dir/ -o combined.pdf`, MCP `convert_image_directory_to_pdf`): one image per page, MediaBox sized to each image's dimensions, correct xref cross-reference table
 
 ## Pipeline
 
@@ -93,7 +100,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 490 test executions passing (217 lib + 222 bin + 14 MCP + 34 integration + 3 doctests); 273 unique tests
+- ✅ 455 test executions passing (197 lib + 202 bin + 16 MCP + 37 integration + 3 doctests); 249+ unique tests (run with `cargo test --features mcp` to include the MCP binary tests)
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time

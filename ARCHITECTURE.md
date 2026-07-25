@@ -125,6 +125,9 @@ PNG/JPEG → load_image → ImageData
          sort by area (back-to-front), detect_background_color (border pixels)
          ↓
          generate_enhanced_svg → L for lines, C for curves, collinear merge, gap-filling strokes
+         ↓
+         [Batch → PDF only] write_multi_page_pdf → one MediaBox-sized page per image,
+           cross-reference table with correct byte offsets
 ```
 
 ### Preprocessing Pipeline (for photographs)
@@ -199,6 +202,7 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Animated GIF support**: `load_animated_gif` loads all frames with delays; CLI outputs numbered SVG files (`output_001.svg`, etc.)
 - **CMYK color space support**: `cmyk_to_rgb` converts CMYK to RGB; `detect_color_space` inspects JPEG APP14 markers to detect CMYK source images
 - **Fully streaming enhanced pipeline**: `generate_enhanced_svg_to` streams paths directly with zero-allocation path writing (`bezier_to_svg_path_to`), no intermediate `ColorGroup` collection or `path_data` strings
+- **Multi-page PDF writer**: `write_multi_page_pdf` emits a proper PDF 1.4 document (Catalog → Pages tree → per-page Page + Content stream objects) with a correct cross-reference table. Each page's `MediaBox` matches its source image dimensions and the y-axis is flipped during path emission (`c`/`l`/`h` operators). `write_enhanced_pdf` is a single-page wrapper. `batch_convert_to_pdf` vectorizes every image in a directory and combines the results into one PDF
 
 ### Preprocessing Algorithms
 - **LUT Bilateral filter**: Fast edge-preserving smoothing
@@ -218,13 +222,22 @@ img2svg -i input.png -o output.svg --colors 16 --smooth 5 --threshold 0.1
 
 ### Library API
 ```rust
-use img2svg::{convert_enhanced, convert, ConversionOptions, EnhancedOptions};
+use img2svg::{convert_enhanced, convert, ConversionOptions, EnhancedOptions, batch_convert_to_pdf};
 
 // Default pipeline (matches CLI without --original)
 convert_enhanced(Path::new("input.png"), Path::new("output.svg"), &EnhancedOptions::default())?;
 
 // Legacy pipeline (matches CLI --original)
 convert(Path::new("input.png"), Path::new("output.svg"), &ConversionOptions::default())?;
+
+// Combine a directory of images into one multi-page PDF
+// (matches `img2svg -i dir/ -o combined.pdf`)
+batch_convert_to_pdf(
+    Path::new("examples/input"),
+    Path::new("combined.pdf"),
+    &EnhancedOptions::default(),
+    4096,
+)?;
 ```
 
 ### MCP Server
@@ -253,6 +266,12 @@ convert(Path::new("input.png"), Path::new("output.svg"), &ConversionOptions::def
 - Enhanced pipeline only; same optional flags as single-file convert
 - Response `details`: `total`, `converted`, `errors`, `files`
 
+**Tool: `convert_image_directory_to_pdf`**
+- `input_dir`, `output_path` (required; `.pdf` file path, not a directory)
+- Enhanced pipeline only; same optional flags as single-file convert (no `output_format`)
+- Vectorizes every image in `input_dir` and combines into one multi-page PDF (one page per image, sized to its dimensions)
+- Response `details`: `pipeline`, `output_format` (`pdf`), `output_size_bytes`, `output_path`, `total`, `converted`, `errors`, `files`
+
 ## Dependencies
 
 - `image` (0.24) — raster image loading (PNG, JPEG, BMP, TIFF, WebP, etc.)
@@ -267,7 +286,7 @@ convert(Path::new("input.png"), Path::new("output.svg"), &ConversionOptions::def
 ### Test Dependencies
 - (dev-dependencies only)
 - Test images in `examples/input/`
-- 490 test executions: 217 lib + 222 bin + 14 MCP + 34 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` tests only run in the binary target)
+- 455 test executions: 197 lib + 202 bin + 16 MCP + 37 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` tests only run in the binary target). Run with `cargo test --features mcp` to include the MCP binary tests
 
 ## Performance Characteristics
 

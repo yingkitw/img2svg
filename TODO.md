@@ -26,7 +26,7 @@
 - [x] MCP enhanced pipeline as default; `legacy`, `preset`, mode flags, and `output_format` parameters
 - [x] MCP batch tool `convert_image_directory` + library `batch_convert_enhanced()`
 - [x] Library API tests (3 doctests + 3 unit tests)
-- [x] Run `cargo test` for full counts (217 lib + 222 bin + 14 `img2svg-mcp` + 34 integration + 3 doctests = 490 test executions)
+- [x] Run `cargo test` for full counts (197 lib + 202 bin + 16 `img2svg-mcp` + 37 integration + 3 doctests = 455 test executions; `cargo test --features mcp` for the MCP binary)
 - [x] Criterion benchmark `benches/pipeline_comparison.rs` (original vs enhanced at 128/256/512 px)
 
 ### Project Structure
@@ -112,6 +112,10 @@
 - [x] CLI progress bar (`--progress`) with stage-based progress reporting for enhanced pipeline
 - [x] `--autotrace` mode that auto-selects tuning parameters based on image characteristics (logo / icon / photo heuristics)
 - [x] Additional vector export backends: DXF, GeoJSON, Gimppath (`--format dxf|geo-json|gimppath`)
+- [x] Multi-page PDF output for batch conversions (`img2svg -i dir/ -o combined.pdf` / `batch_convert_to_pdf` / MCP `convert_image_directory_to_pdf`)
+- [x] Unit tests for multi-page PDF (structure, MediaBoxes, xref offsets, y-flip; 5 tests in `src/eps_generator.rs`)
+- [x] Integration tests for single-page PDF export, multi-page PDF from pages, and batch directory → PDF (3 tests)
+- [x] MCP `convert_image_directory_to_pdf` tool (schema + 2 tests; success path + missing-params error)
 
 ## Pending 🚧
 
@@ -119,20 +123,15 @@
 
 ## Maybe / Future Considerations 💭
 
-- [ ] WebAssembly compilation for browser-based conversion
-- [ ] GUI application for interactive parameter tuning (live `--tune` is HTML-only today)
 - [ ] Plugin system for custom color quantization algorithms
 - [ ] Machine learning-based color palette generation
 - [ ] Support for spot color (Pantone) matching
 - [ ] Layer-aware vectorization for Photoshop files
 - [ ] Vector-to-raster comparison tools
 - [ ] Multi-color hierarchical SVG layers (Inkscape-style grouped paths per color)
-- [ ] Optical character recognition (OCR) text preservation in logos (vtracer)
 - [x] CLI progress bar for large image / batch conversions (Potrace `--progress`)
 - [x] Additional vector export backends: DXF, GeoJSON, Gimppath (Potrace)
 - [x] `--autotrace` mode that auto-selects the best quantization/filter strategy (Inkscape Autotrace)
-- [ ] Multi-page PDF output for batch conversions (Potrace / Inkscape)
-- [ ] Live preview server for interactive parameter tuning (Inkscape Trace Bitmap preview)
 
 ### Competitive gaps (from Potrace, vtracer, Inkscape trace)
 - [x] Corner optimization / curve optimization pass (Potrace-style)
@@ -142,5 +141,9 @@
 - [x] CLI progress bar (Potrace `--progress`)
 - [x] DXF / GeoJSON / Gimppath export backends (Potrace)
 - [x] Auto-algorithm selection / `--autotrace` mode (Inkscape Autotrace)
-- [ ] Multi-page PDF output for batch conversions (Potrace / Inkscape)
-- [ ] Live interactive preview for parameter tuning (Inkscape Trace Bitmap dialog)
+- [x] Multi-page PDF output for batch conversions (Potrace / Inkscape)
+
+### Out of scope (will not implement)
+- WebAssembly compilation (not in scope)
+- GUI application / live interactive preview server (CLI and library only)
+- Optical character recognition (OCR) text preservation (no OCR dependency)

@@ -2,7 +2,7 @@
 
 **img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
-[![Tests](https://img.shields.io/badge/tests-490%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-455%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
 [![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -104,11 +104,11 @@ Converting raster images to vector format is essential for:
 | **License** | Apache-2.0 |
 | **Latest version** | 0.1.10 |
 | **Supported inputs** | PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld |
-| **Supported outputs** | SVG, EPS, PDF, AI, DXF, GeoJSON, GIMP path |
+| **Supported outputs** | SVG, EPS, PDF (single or multi-page), AI, DXF, GeoJSON, GIMP path |
 | **Default pipeline** | Cubic Bézier with edge-aware quantization |
 | **CLI binary** | `img2svg` |
 | **MCP binary** | `img2svg-mcp` |
-| **Test count** | 490+ passing |
+| **Test count** | 455 passing (`cargo test --features mcp` for the MCP binary tests) |
 | **Performance** | ~60–70 ms for a 512×512 image (release build) |
 | **Default max dimension** | 4096 px (auto-resizes larger images) |
 
@@ -279,8 +279,11 @@ img2svg -i logo.png -o logo.svg -c 32 -s 7
 # Simple logo with fewer colors
 img2svg -i icon.png -o icon.svg -c 8 -s 2
 
-# Batch convert all images in a directory
+# Batch convert all images in a directory to per-file vectors
 img2svg -i images/ -o svgs/
+
+# Combine all images in a directory into one multi-page PDF (one page per image)
+img2svg -i images/ -o combined.pdf
 
 # Limit max dimension for very large images (default: 4096)
 img2svg -i huge_photo.jpg -o output.svg --max-size 2048
@@ -339,12 +342,12 @@ There are two conversion paths:
 - **`convert` / `convert_to_svg_string`** — legacy pipeline (`vectorize` + `generate_svg`), controlled by `ConversionOptions` (same behavior as CLI **`--original`**).
 - **`convert_enhanced` / `convert_enhanced_to_svg_string`** — default enhanced Bézier pipeline (same as CLI default). Format inferred from output path extension (also supports `.eps`, `.pdf`, `.ai`).
 
-For lower-level control, use **`vectorize_enhanced` + `write_enhanced_svg` / `write_enhanced_output`**, or **`batch_convert_enhanced`** for directory batch runs.
+For lower-level control, use **`vectorize_enhanced` + `write_enhanced_svg` / `write_enhanced_output`**, or **`batch_convert_enhanced`** for directory batch runs. For multi-page PDF output (one image per page), use **`batch_convert_to_pdf`** or the lower-level **`write_multi_page_pdf`** (single-page: **`write_enhanced_pdf`**).
 
 ```rust
 use img2svg::{
     convert, convert_enhanced, convert_enhanced_to_svg_string, load_image, ConversionOptions,
-    EnhancedOptions, EnhancedOutputFormat, batch_convert_enhanced,
+    EnhancedOptions, EnhancedOutputFormat, batch_convert_enhanced, batch_convert_to_pdf,
 };
 use std::path::Path;
 
@@ -365,6 +368,15 @@ batch_convert_enhanced(
     Path::new("examples/output"),
     &opts,
     EnhancedOutputFormat::Svg,
+    4096,
+)?;
+
+// Combine a directory into a single multi-page PDF
+// (CLI: img2svg -i dir/ -o combined.pdf)
+batch_convert_to_pdf(
+    Path::new("examples/input"),
+    Path::new("combined.pdf"),
+    &opts,
     4096,
 )?;
 
@@ -452,6 +464,12 @@ The MCP server provides two tools:
   - `input_dir`, `output_dir` (required)
   - Same enhanced-pipeline options as single-file convert (no `legacy` support in batch)
   - Response `details`: `total`, `converted`, `errors`, `files` (per-file success/error)
+
+**`convert_image_directory_to_pdf`** — combine all supported images in a directory into a single multi-page PDF (matches `img2svg -i dir/ -o combined.pdf`)
+  - `input_dir`, `output_path` (required; must be a `.pdf` file path)
+  - Same enhanced-pipeline options as single-file convert (no `legacy`, no `output_format`)
+  - One image per page, MediaBox sized to each image's dimensions
+  - Response `details`: `pipeline`, `output_format` (`pdf`), `output_size_bytes`, `output_path`, `total`, `converted`, `errors`, `files`
 
 ## Algorithm
 
