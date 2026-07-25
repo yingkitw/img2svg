@@ -1,6 +1,6 @@
 [package]
 name = "img2svg"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 description = "High-performance Rust image-to-SVG converter: vectorize PNG, JPEG, GIF, WebP, BMP, TIFF to scalable SVG with cubic Bezier curves, edge-aware k-means quantization, and Potrace-style optimization. Use as a CLI tool, Rust library, or MCP server for AI assistants."
 authors = ["Ying Kit WONG"]
