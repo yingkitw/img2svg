@@ -292,7 +292,7 @@ batch_convert_to_pdf(
 ### Test Dependencies
 - `criterion` (0.5, dev-dependency) — benchmark harness for `benches/pipeline_comparison.rs`
 - Test images in `examples/input/`
-- 484 test executions: 205 lib + 221 bin + 17 MCP + 38 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` and now `gradient_detector` tests run in both targets). Run with `cargo test --features mcp` to include the MCP binary tests
+- 486 test executions: 206 lib + 222 bin + 17 MCP + 38 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` and now `gradient_detector` tests run in both targets). Run with `cargo test --features mcp` to include the MCP binary tests
 
 ## Performance Characteristics
 

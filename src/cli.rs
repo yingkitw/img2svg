@@ -165,6 +165,12 @@ pub struct Cli {
     /// Detect smooth gradients per region and render them as native SVG gradient fills
     #[arg(long)]
     pub gradients: bool,
+
+    /// Wrap each color group in an SVG `<g>` element with a
+    /// `data-img2svg-color="#hex"` attribute. Produces Inkscape-style
+    /// hierarchical layers that are easier to edit/restyle in vector tools.
+    #[arg(long)]
+    pub group_by_color: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq, Default)]

@@ -125,6 +125,7 @@
 - [x] `--quality-preset low|medium|high` (CLI) — human-readable precision preset for SVG path coordinate decimals; overrides `--precision` when set
 - [x] `--curve-tolerance` (CLI) — Bézier fitting strictness knob (default 2.0); wired through `main.rs::enhanced_options()` → `EnhancedOptions.curve_tolerance`
 - [x] Whole-region gradient merging — `collect_gradient_defs` two-tier match: exact `DetectedGradient` equality first, then `gradient_is_similar` (same variant only). Merges adjacent regions with related gradients into a single `<defs>` entry
+- [x] `--group-by-color` (CLI) — wrap each fill-color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers (default off; streaming-preserving)
 
 ## Pending 🚧
 
@@ -135,6 +136,7 @@
 Seeded by competitive intelligence (Potrace / vtracer / Inkscape, 2026-09-08):
 
 - [x] Whole-region gradient merging: detect one gradient spanning multiple adjacent quantized bands (current detection is per-band; see MEMORY.md gradient notes) — **done 2026-09-15**: two-tier match (exact equality + same-variant similarity) in `collect_gradient_defs`
+- [x] Multi-color hierarchical SVG layers (Inkscape-style grouped paths per color) — **done 2026-09-15**: `--group-by-color` flag wraps each fill-color group in `<g data-img2svg-color="#hex">`; streaming-preserving; default off
 - [ ] vtracer-style stacked vs cutout layer hierarchy modes
 - [ ] Plugin system for custom color quantization algorithms
 - [ ] Machine learning-based color palette generation

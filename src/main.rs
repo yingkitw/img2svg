@@ -59,6 +59,7 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         coordinate_precision,
         detect_gradients: cli.gradients,
         curve_tolerance: cli.curve_tolerance,
+        group_by_color: cli.group_by_color,
         ..Default::default()
     }
 }

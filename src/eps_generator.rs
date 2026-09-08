@@ -453,6 +453,7 @@ mod tests {
                 gradient: None,
                 stroke_only: false,
             }],
+            group_by_color: false,
         }
     }
 

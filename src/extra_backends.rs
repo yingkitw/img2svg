@@ -262,6 +262,7 @@ mod tests {
                 gradient: None,
                 stroke_only: false,
             }],
+            group_by_color: false,
         };
         let path = std::path::PathBuf::from("/tmp/img2svg_test.geojson");
         write_enhanced_geojson(&data, &path).unwrap();
@@ -291,6 +292,7 @@ mod tests {
                 gradient: None,
                 stroke_only: false,
             }],
+            group_by_color: false,
         };
         let path = std::path::PathBuf::from("/tmp/img2svg_test.gimppath");
         write_enhanced_gimppath(&data, &path).unwrap();
@@ -320,6 +322,7 @@ mod tests {
                 gradient: None,
                 stroke_only: false,
             }],
+            group_by_color: false,
         };
         let path = std::path::PathBuf::from("/tmp/img2svg_test.dxf");
         write_enhanced_dxf(&data, &path).unwrap();

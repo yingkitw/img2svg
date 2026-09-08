@@ -157,6 +157,12 @@ pub struct EnhancedOptions {
     pub detect_gradients: bool,
     /// Max fit MSE for gradient detection (default 50.0; lower = stricter).
     pub gradient_error_threshold: f64,
+    /// Wrap each color group in an SVG `<g>` element with a
+    /// `data-img2svg-color="#rrggbb"` attribute (default false).
+    /// Produces Inkscape-style hierarchical layers that are easier to
+    /// edit/restyle in vector tools; ignores the background rect and
+    /// stroke-only paths.
+    pub group_by_color: bool,
 }
 
 impl Default for EnhancedOptions {
@@ -183,6 +189,7 @@ impl Default for EnhancedOptions {
             coordinate_precision: crate::bezier_fitter::DEFAULT_COORDINATE_PRECISION,
             detect_gradients: false,
             gradient_error_threshold: 50.0,
+            group_by_color: false,
         }
     }
 }
@@ -193,6 +200,9 @@ pub struct EnhancedVectorData {
     pub height: u32,
     pub background_color: (u8, u8, u8, u8),
     pub paths: Vec<EnhancedPath>,
+    /// Whether to wrap each color group in an SVG `<g>` with a
+    /// `data-img2svg-color="#rrggbb"` attribute (Inkscape-style hierarchy).
+    pub group_by_color: bool,
 }
 
 /// A vectorized path with Bézier curves.
@@ -577,6 +587,7 @@ pub fn vectorize_enhanced(
         height: image_data.height,
         background_color,
         paths: enhanced_paths,
+        group_by_color: options.group_by_color,
     })
 }
 
@@ -625,6 +636,7 @@ fn vectorize_centerline(
         height: image_data.height,
         background_color: bg,
         paths,
+        group_by_color: false,
     })
 }
 
@@ -915,9 +927,16 @@ pub fn generate_enhanced_svg_to_prec<W: Write>(
     let mut current_gradient_id: Option<String> = None;
     let mut current_hex = String::with_capacity(7);
     let mut has_data = false;
+    let mut group_open = false; // tracks if a <g data-img2svg-color=...> is currently open
 
     for (path_idx, path) in data.paths.iter().enumerate() {
         if path.stroke_only {
+            // Close any open fill-color group before emitting a stroke-only path
+            // (stroke-only paths are never wrapped in <g>, so they sit at top level).
+            if group_open {
+                writeln!(writer, "  </g>")?;
+                group_open = false;
+            }
             let color = path.color;
             let hex = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
             let opacity_attr = if color.3 < 255 {
@@ -963,11 +982,19 @@ pub fn generate_enhanced_svg_to_prec<W: Write>(
                 )?;
                 writer.write_all(&scratch)?;
                 writeln!(writer, r#""/>"#)?;
+                if data.group_by_color {
+                    writeln!(writer, "  </g>")?;
+                    group_open = false;
+                }
             }
 
             current_color = Some(path_color);
             current_gradient_id = gradient_ids.get(&path_idx).cloned();
             current_hex = format!("#{:02x}{:02x}{:02x}", path_color.0, path_color.1, path_color.2);
+            if data.group_by_color {
+                writeln!(writer, r#"  <g data-img2svg-color="{}">"#, current_hex)?;
+                group_open = true;
+            }
             scratch.clear();
             has_data = false;
         }
@@ -1012,6 +1039,10 @@ pub fn generate_enhanced_svg_to_prec<W: Write>(
         )?;
         writer.write_all(&scratch)?;
         writeln!(writer, r#""/>"#)?;
+        if data.group_by_color && group_open {
+            writeln!(writer, "  </g>")?;
+            group_open = false;
+        }
     }
 
     writeln!(writer, "</svg>")?;
@@ -1339,6 +1370,7 @@ mod tests {
             height: 10,
             background_color: (0, 0, 0, 64),
             paths,
+            group_by_color: false,
         };
         let svg = generate_enhanced_svg(&data);
         assert!(svg.contains("fill-opacity=\"0.25\""));
@@ -1379,6 +1411,7 @@ mod tests {
             height: 10,
             background_color: (255, 255, 255, 255),
             paths,
+            group_by_color: false,
         };
         let svg_string = generate_enhanced_svg(&data);
 
@@ -1602,6 +1635,62 @@ mod tests {
         let data_plain = vectorize_enhanced(&img, &opts(false)).expect("vectorize plain");
         assert!(data_plain.paths.iter().all(|p| p.gradient.is_none()));
         assert!(!generate_enhanced_svg(&data_plain).contains("<defs>"));
+    }
+
+    #[test]
+    fn test_group_by_color_wraps_paths_in_g_elements() {
+        // Two fill paths of different colors with group_by_color=true
+        // should produce two <g data-img2svg-color="..."> wrappers.
+        let mk_path = |color: (u8, u8, u8, u8)| EnhancedPath {
+            curves: vec![BezierCurve {
+                start: Point { x: 0.0, y: 0.0 },
+                control1: Point { x: 0.0, y: 10.0 },
+                control2: Point { x: 10.0, y: 10.0 },
+                end: Point { x: 10.0, y: 0.0 },
+            }],
+            color,
+            area: 100,
+            svg_override: None,
+            gradient: None,
+            stroke_only: false,
+        };
+        let data_on = EnhancedVectorData {
+            width: 10,
+            height: 10,
+            background_color: (255, 255, 255, 255),
+            paths: vec![mk_path((255, 0, 0, 255)), mk_path((0, 0, 255, 255))],
+            group_by_color: true,
+        };
+        let svg = generate_enhanced_svg(&data_on);
+        assert_eq!(
+            svg.matches("<g data-img2svg-color=").count(),
+            2,
+            "expected 2 color groups, got: {}",
+            svg
+        );
+        assert!(svg.contains("data-img2svg-color=\"#ff0000\""));
+        assert!(svg.contains("data-img2svg-color=\"#0000ff\""));
+        assert_eq!(
+            svg.matches("</g>").count(),
+            2,
+            "expected 2 closing </g> tags, got: {}",
+            svg
+        );
+
+        // group_by_color=false (default): no <g> wrappers
+        let data_off = EnhancedVectorData {
+            width: 10,
+            height: 10,
+            background_color: (255, 255, 255, 255),
+            paths: vec![mk_path((255, 0, 0, 255)), mk_path((0, 0, 255, 255))],
+            group_by_color: false,
+        };
+        let svg_off = generate_enhanced_svg(&data_off);
+        assert!(
+            !svg_off.contains("<g data-img2svg-color="),
+            "default output must not contain <g data-img2svg-color=...>, got: {}",
+            svg_off
+        );
     }
 
     #[test]

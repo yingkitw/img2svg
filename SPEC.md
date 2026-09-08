@@ -33,6 +33,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
    - `--curve-tolerance`: Bézier fitting strictness in pixels (default 2.0); higher values produce fewer, gentler segments
    - `--stats`: Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed ms) after conversion
    - `--gradients`: Detect smooth gradients per region (against the original image) and render them as native SVG `<defs>` gradient fills
+   - `--group-by-color`: Wrap each color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers (default off)
 
 ### MCP Tool (`convert_image_to_svg`)
 - Default pipeline: **enhanced Bézier** (matches CLI without `--original`)
@@ -109,7 +110,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 484 test executions passing (205 lib + 221 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
+- ✅ 486 test executions passing (206 lib + 222 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
