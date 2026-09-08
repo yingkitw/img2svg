@@ -101,7 +101,7 @@ Converting raster images to vector format is essential for:
 |-----------|-------|
 | **Language** | Rust (edition 2024) |
 | **License** | Apache-2.0 |
-| **Latest version** | 0.1.12 |
+| **Latest version** | 0.1.13 |
 | **Supported inputs** | PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld |
 | **Supported outputs** | SVG, EPS, PDF (single or multi-page), AI, DXF, GeoJSON, GIMP path |
 | **Default pipeline** | Cubic Bézier with edge-aware quantization |
@@ -243,7 +243,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-img2svg = "0.1.12"
+img2svg = "0.1.13"
 ```
 
 ### MCP Server
@@ -601,7 +601,7 @@ A: Use fewer colors (`-c 4` to `8`), enable `--preprocess` for photos, choose th
 A: Yes — img2svg is released under the Apache License 2.0, which permits commercial use, modification, and redistribution.
 
 **Q: How do I install img2svg?**
-A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.12"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release --features mcp` (produces both `img2svg` and `img2svg-mcp` binaries).
+A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.13"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release --features mcp` (produces both `img2svg` and `img2svg-mcp` binaries).
 
 ## License
 
