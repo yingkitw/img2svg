@@ -29,6 +29,8 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--autotrace`: Auto-select tuning parameters (colors, smoothing, simplification, preprocess, optimizations) based on image characteristics
    - `--format`: Output format — `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (default `svg`; inferred from `-o` extension). Enhanced pipeline supports all formats; with `--original`, only `svg`/`eps` are written directly (other formats fall back to SVG with a note)
    - `--precision`: Decimal places for SVG path coordinates, 1-6 (default 2; enhanced pipeline only; lower values shrink output)
+   - `--quality-preset`: Human-readable precision preset (`low`=1, `medium`=2, `high`=6); overrides `--precision` when set
+   - `--curve-tolerance`: Bézier fitting strictness in pixels (default 2.0); higher values produce fewer, gentler segments
    - `--stats`: Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed ms) after conversion
    - `--gradients`: Detect smooth gradients per region (against the original image) and render them as native SVG `<defs>` gradient fills
 
@@ -107,7 +109,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 480 test executions passing (203 lib + 219 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
+- ✅ 484 test executions passing (205 lib + 221 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time

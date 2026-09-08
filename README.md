@@ -2,7 +2,7 @@
 
 **img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
-[![Tests](https://img.shields.io/badge/tests-480%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-484%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
 [![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -76,7 +76,8 @@ Converting raster images to vector format is essential for:
 12. **Progress Logging**: Stage-by-stage progress output for large image conversions
 13. **Incremental SVG Generation**: Low-memory writer-based output for both pipelines (`generate_svg_to`, `generate_enhanced_svg_to`)
 14. **Native SVG Gradient Fills**: `--gradients` detects smooth linear/radial gradients per region and renders them as `<defs>` `<linearGradient>`/`<radialGradient>` fills
-15. **Adjustable Coordinate Precision**: `--precision` (1–6 decimals) trades path exactness for smaller SVG files
+15. **Adjustable Coordinate Precision**: `--precision` (1–6 decimals) and `--quality-preset low|medium|high` trade path exactness for smaller SVG files
+15a. **Tunable Bézier Fitting**: `--curve-tolerance` controls Bézier curve strictness for the density vs. fidelity tradeoff
 16. **Animated GIF Support**: Converts each frame to a numbered SVG file (`output_001.svg`, `output_002.svg`, etc.)
 17. **CMYK Color Space Input**: `cmyk_to_rgb` conversion and JPEG APP14 marker detection for print workflow support
 18. **Flexible Usage**: CLI tool, Rust library, and MCP server
@@ -107,7 +108,7 @@ Converting raster images to vector format is essential for:
 | **Default pipeline** | Cubic Bézier with edge-aware quantization |
 | **CLI binary** | `img2svg` |
 | **MCP binary** | `img2svg-mcp` |
-| **Test count** | 480 passing (`cargo test --features mcp` for the MCP binary tests) |
+| **Test count** | 484 passing (`cargo test --features mcp` for the MCP binary tests) |
 | **Performance** | ~60–70 ms for a 512×512 image (release build) |
 | **Default max dimension** | 4096 px (auto-resizes larger images) |
 
@@ -316,6 +317,8 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--autotrace` | | false | Auto-select tuning parameters based on image characteristics |
 | `--format` | | svg | Output format: `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (also inferred from `-o` extension) |
 | `--precision` | | 2 | Decimal places for SVG path coordinates (1–6). Lower values shrink the file (vtracer `path_precision` parity); enhanced pipeline only |
+| `--quality-preset` | | `medium` | Human-readable precision preset: `low` (1 decimal), `medium` (2), or `high` (6). Overrides `--precision` when set |
+| `--curve-tolerance` | | 2.0 | Bézier fitting strictness. Higher values yield fewer, gentler segments (smaller SVG); lower values preserve fine curvature (larger SVG). Effective with `--optimize-curves` |
 | `--stats` | | false | Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed time) |
 | `--gradients` | | false | Detect smooth gradients per region and render them as native SVG `<defs>` gradient fills |
 

@@ -34,6 +34,12 @@ fn is_gif(path: &Path) -> bool {
 }
 
 fn enhanced_options(cli: &Cli) -> EnhancedOptions {
+    let coordinate_precision = cli.precision_preset.as_deref().and_then(|p| match p {
+        "low" => Some(1),
+        "medium" => Some(2),
+        "high" => Some(6),
+        _ => None,
+    }).unwrap_or(cli.precision);
     EnhancedOptions {
         num_colors: cli.colors,
         preprocess: enhanced_preprocess(cli),
@@ -50,8 +56,9 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         },
         progress: cli.progress,
         autotrace: cli.autotrace,
-        coordinate_precision: cli.precision,
+        coordinate_precision,
         detect_gradients: cli.gradients,
+        curve_tolerance: cli.curve_tolerance,
         ..Default::default()
     }
 }

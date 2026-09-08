@@ -122,6 +122,9 @@
 - [x] Native SVG gradient output: `--gradients` / `EnhancedOptions.detect_gradients` / MCP `gradients` wires `gradient_detector` into the enhanced pipeline — detected regions render as `<defs>` `<linearGradient>`/`<radialGradient>` fills (opt-in; detection runs against the original image; 8 new tests, 480 total executions)
 - [x] Documentation audit: fixed version drift, MCP install instructions (`--features mcp`), MCP schema enums, test counts, TOC anchors across README/SPEC/ARCHITECTURE
 - [x] MEMORY.md created (pipeline, writer, CLI/MCP, and testing patterns harvested)
+- [x] `--quality-preset low|medium|high` (CLI) — human-readable precision preset for SVG path coordinate decimals; overrides `--precision` when set
+- [x] `--curve-tolerance` (CLI) — Bézier fitting strictness knob (default 2.0); wired through `main.rs::enhanced_options()` → `EnhancedOptions.curve_tolerance`
+- [x] Whole-region gradient merging — `collect_gradient_defs` two-tier match: exact `DetectedGradient` equality first, then `gradient_is_similar` (same variant only). Merges adjacent regions with related gradients into a single `<defs>` entry
 
 ## Pending 🚧
 
@@ -131,7 +134,7 @@
 
 Seeded by competitive intelligence (Potrace / vtracer / Inkscape, 2026-09-08):
 
-- [ ] Whole-region gradient merging: detect one gradient spanning multiple adjacent quantized bands (current detection is per-band; see MEMORY.md gradient notes)
+- [x] Whole-region gradient merging: detect one gradient spanning multiple adjacent quantized bands (current detection is per-band; see MEMORY.md gradient notes) — **done 2026-09-15**: two-tier match (exact equality + same-variant similarity) in `collect_gradient_defs`
 - [ ] vtracer-style stacked vs cutout layer hierarchy modes
 - [ ] Plugin system for custom color quantization algorithms
 - [ ] Machine learning-based color palette generation

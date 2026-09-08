@@ -147,6 +147,17 @@ pub struct Cli {
     #[arg(long, default_value = "2", value_parser = clap::value_parser!(u32).range(1..=6))]
     pub precision: u32,
 
+    /// Precision preset for SVG path coordinates (1=low, 2=medium/default, 6=high).
+    /// Overrides --precision when set.
+    #[arg(long = "quality-preset")]
+    pub precision_preset: Option<String>,
+
+    /// Curve merge tolerance in pixels for --optimize-curves.
+    /// Higher values merge more consecutive nearly-linear segments (default: 2.0).
+    /// Only effective when --optimize-curves is also set.
+    #[arg(long, default_value = "2.0")]
+    pub curve_tolerance: f64,
+
     /// Print conversion stats (dimensions, paths, colors, output size, time) after conversion
     #[arg(long)]
     pub stats: bool,

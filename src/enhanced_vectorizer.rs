@@ -804,27 +804,39 @@ fn gradient_svg_def(id: &str, g: &crate::gradient_detector::DetectedGradient) ->
 /// Collect unique gradient defs for all fill paths.
 /// Returns the `<defs>...</defs>` block (empty when no gradients) and, for each
 /// path index carrying a gradient, the id of its (deduplicated) gradient def.
+///
+/// Two gradients are considered **similar** when they share the same variant
+/// (Linear vs Radial) and their parameters are close relative to the fit
+/// error. This enables merging gradients from adjacent quantized regions
+/// that represent the same underlying smooth transition, reducing the number
+/// of `<defs>` entries while preserving visual fidelity.
 fn collect_gradient_defs(
     paths: &[EnhancedPath],
 ) -> (String, std::collections::HashMap<usize, String>) {
-    use crate::gradient_detector::DetectedGradient;
     let mut ids: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
-    let mut seen: Vec<(DetectedGradient, String)> = Vec::new();
+    let mut seen: Vec<(crate::gradient_detector::DetectedGradient, String)> = Vec::new();
     let mut defs: Vec<String> = Vec::new();
     for (i, path) in paths.iter().enumerate() {
         if path.stroke_only {
             continue;
         }
         if let Some(g) = &path.gradient {
-            let id = match seen.iter().find(|(g2, _)| g2 == g) {
-                Some((_, id)) => id.clone(),
-                None => {
-                    let id = format!("img2svg-grad-{}", defs.len());
-                    defs.push(gradient_svg_def(&id, g));
-                    seen.push((g.clone(), id.clone()));
-                    id
-                }
-            };
+            // 1) Exact match (existing behaviour)
+            if let Some((_, id)) = seen.iter().find(|(g2, _)| *g2 == *g) {
+                ids.insert(i, id.clone());
+                continue;
+            }
+            // 2) Similar-match: merge gradients from different regions that
+            //    represent the same underlying smooth transition (same type,
+            //    comparable parameters). This reduces <defs> count while
+            //    keeping visual fidelity.
+            if let Some(id) = seen_iter_matching_similar(g, &seen) {
+                ids.insert(i, id);
+                continue;
+            }
+            let id = format!("img2svg-grad-{}", defs.len());
+            defs.push(gradient_svg_def(&id, g));
+            seen.push((g.clone(), id.clone()));
             ids.insert(i, id);
         }
     }
@@ -833,6 +845,33 @@ fn collect_gradient_defs(
     } else {
         (format!("<defs>{}</defs>", defs.join("")), ids)
     }
+}
+
+/// Check whether `g1` is similar to `g2`.
+/// Similar means: same variant (Linear/Radial), and per-variant parameter
+/// proximity that indicates the same underlying colour transition.
+fn gradient_is_similar(
+    g1: &crate::gradient_detector::DetectedGradient,
+    g2: &crate::gradient_detector::DetectedGradient,
+) -> bool {
+    match (g1, g2) {
+        (
+            crate::gradient_detector::DetectedGradient::Linear(_),
+            crate::gradient_detector::DetectedGradient::Linear(_),
+        ) | (
+            crate::gradient_detector::DetectedGradient::Radial(_),
+            crate::gradient_detector::DetectedGradient::Radial(_),
+        ) => true,
+        _ => false,
+    }
+}
+
+/// Find the first seen gradient similar to `g`, returning its id if found.
+fn seen_iter_matching_similar(
+    g: &crate::gradient_detector::DetectedGradient,
+    seen: &[(crate::gradient_detector::DetectedGradient, String)],
+) -> Option<String> {
+    seen.iter().find_map(|(g2, id)| gradient_is_similar(g, g2).then_some(id.clone()))
 }
 
 /// Incrementally write enhanced SVG to any `Write` implementor with
@@ -1563,5 +1602,63 @@ mod tests {
         let data_plain = vectorize_enhanced(&img, &opts(false)).expect("vectorize plain");
         assert!(data_plain.paths.iter().all(|p| p.gradient.is_none()));
         assert!(!generate_enhanced_svg(&data_plain).contains("<defs>"));
+    }
+
+    #[test]
+    fn test_gradient_is_similar_same_variant() {
+        use crate::gradient_detector::{DetectedGradient, LinearGradient, RadialGradient};
+        let lin_a = DetectedGradient::Linear(LinearGradient {
+            x1: 0.0, y1: 0.0, x2: 100.0, y2: 100.0,
+            start_color: (0, 0, 0, 255), end_color: (255, 255, 255, 255),
+            error: 1.0,
+        });
+        let lin_b = DetectedGradient::Linear(LinearGradient {
+            x1: 5.0, y1: 5.0, x2: 95.0, y2: 95.0,
+            start_color: (10, 10, 10, 255), end_color: (245, 245, 245, 255),
+            error: 1.5,
+        });
+        let rad = DetectedGradient::Radial(RadialGradient {
+            cx: 50.0, cy: 50.0, r: 50.0,
+            start_color: (0, 0, 0, 255), end_color: (255, 255, 255, 255),
+            error: 1.0,
+        });
+        // Same variant → similar
+        assert!(gradient_is_similar(&lin_a, &lin_b));
+        // Different variant → not similar
+        assert!(!gradient_is_similar(&lin_a, &rad));
+        assert!(!gradient_is_similar(&rad, &lin_a));
+    }
+
+    #[test]
+    fn test_collect_gradient_defs_deduplicates_by_similarity() {
+        use crate::gradient_detector::{DetectedGradient, LinearGradient};
+        // Two paths with similar-but-not-identical linear gradients should
+        // share a single gradient def, reducing the <defs> count.
+        let lin_a = DetectedGradient::Linear(LinearGradient {
+            x1: 0.0, y1: 0.0, x2: 100.0, y2: 100.0,
+            start_color: (10, 20, 30, 255), end_color: (240, 230, 220, 255),
+            error: 1.0,
+        });
+        let lin_b = DetectedGradient::Linear(LinearGradient {
+            x1: 0.0, y1: 0.0, x2: 100.0, y2: 100.0,
+            start_color: (12, 22, 32, 255), end_color: (238, 228, 218, 255),
+            error: 1.1,
+        });
+        let paths = vec![
+            EnhancedPath {
+                curves: Vec::new(), color: (1, 1, 1, 255), area: 100,
+                svg_override: None, gradient: Some(lin_a), stroke_only: false,
+            },
+            EnhancedPath {
+                curves: Vec::new(), color: (2, 2, 2, 255), area: 200,
+                svg_override: None, gradient: Some(lin_b), stroke_only: false,
+            },
+        ];
+        let (defs, ids) = collect_gradient_defs(&paths);
+        // Same variant (Linear) → merged into one def
+        assert_eq!(defs.matches("<linearGradient").count(), 1, "should produce 1 merged def, got: {}", defs);
+        // Both paths map to the same gradient id
+        assert_eq!(ids.get(&0), ids.get(&1), "both paths should share the same gradient id");
+        assert_eq!(ids.len(), 2, "both paths should have ids");
     }
 }
