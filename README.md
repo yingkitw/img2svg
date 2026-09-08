@@ -19,6 +19,7 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Examples & Quality](#examples--quality)
+- [Output Feature Examples](#output-feature-examples)
 - [Algorithm](#algorithm)
 - [Performance](#performance)
 - [Tips for Best Results](#tips-for-best-results)
@@ -224,6 +225,74 @@ img2svg -i input.png -o img2svg.svg -c 16 -s 5
 - img2svg: Smooth curves, accurate colors, compact paths
 - ImageMagick: Often produces jagged edges, limited color optimization
 - Potrace: B&W only, requires pre-processing for color images
+
+### Output Feature Examples
+
+Real SVG output snippets showing how each flag shapes the result. Generated from `examples/input/simple.png` and `examples/input/gradient.png`.
+
+#### Coordinate Precision Presets (`--quality-preset`)
+
+| Preset | Flag | Sample output |
+| --- | --- | --- |
+| `low` | `--quality-preset low` | `d="M200,50.5L200.5,151L351,150.5…"` (1 decimal) |
+| `medium` *(default)* | `--quality-preset medium` | `d="M93,50.5L78.5,55C68.4,59.8…"` (2 decimals) |
+| `high` | `--quality-preset high` | `d="M93,50.5L78.5,55C68.363048,59.770849…"` (6 decimals in Bézier curves) |
+
+`low` shrinks files for icons and logos; `high` preserves fine curvature for technical drawings.
+
+#### Curve Tolerance (`--curve-tolerance` with `--optimize-curves`)
+
+Generated from `line_art.png`:
+
+```text
+--curve-tolerance 1.0  →  16 750 bytes  (gentler merge, more segments)
+--curve-tolerance 5.0  →  15 959 bytes  (aggressive merge, fewer segments)
+```
+
+Higher tolerance = fewer, gentler Bézier segments = smaller SVG.
+
+#### Gradient Fills (`--gradients`)
+
+Smooth bands are emitted as native SVG `<defs>` gradients instead of discrete colour bands:
+
+```xml
+<defs>
+  <linearGradient id="img2svg-grad-0" gradientUnits="userSpaceOnUse"
+                  x1="258.04" y1="1.10" x2="180.08" y2="359.20">
+    <stop offset="0" stop-color="#659385"/>
+    <stop offset="1" stop-color="#828e6f"/>
+  </linearGradient>
+  <radialGradient id="img2svg-grad-1" gradientUnits="userSpaceOnUse"
+                  cx="199.50" cy="334.00" r="199.92">
+    <stop offset="0" stop-color="#80aa55"/>
+    <stop offset="1" stop-color="#80aa55"/>
+  </radialGradient>
+</defs>
+…
+<path fill="url(#img2svg-grad-0)" stroke="#749079" … />
+```
+
+Alpha-aware stops: a stop with `stop-opacity` is emitted whenever the underlying colour has alpha < 255.
+
+#### Inkscape-Style Color Layers (`--group-by-color`)
+
+Each fill-colour group is wrapped in a `<g data-img2svg-color="#hex">` element so the SVG opens as named layers in Inkscape/Illustrator:
+
+```xml
+<rect width="400" height="400" fill="#7fec0f" />
+<g data-img2svg-color="#749079">
+  <path fill="url(#img2svg-grad-0)" stroke="#749079" stroke-width="0.5"
+        stroke-linejoin="round" d="…"/>
+</g>
+<g data-img2svg-color="#837684">
+  <path fill="#837684" stroke="#837684" stroke-width="0.5" d="…"/>
+</g>
+<g data-img2svg-color="#18e580">
+  <path fill="#18e580" stroke="#18e580" stroke-width="0.5" d="…"/>
+</g>
+```
+
+Stroke-only paths sit at the top level (never wrapped). Streaming-preserving: the existing one-pass colour-grouping logic is unchanged; `<g>` open/close are inserted at flush boundaries only.
 
 ## Installation
 
