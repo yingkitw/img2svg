@@ -311,6 +311,71 @@ fn test_generate_enhanced_svg_string() {
 }
 
 #[test]
+fn test_coordinate_precision_end_to_end() {
+    let test_img = PathBuf::from("/tmp/img2svg_precision.png");
+    create_test_png(&test_img, 48, 48, "gradient");
+
+    let image_data = load_image(&test_img).expect("load");
+
+    let max_decimals = |svg: &str| -> usize {
+        let mut max = 0;
+        for attr in svg.split("d=\"").skip(1) {
+            let d = attr.split('"').next().unwrap_or("");
+            for token in d.split(['M', 'L', 'C', 'Z', ' ', ',']).filter(|t| !t.is_empty()) {
+                if let Some(dot) = token.find('.') {
+                    max = max.max(token.len() - dot - 1);
+                }
+            }
+        }
+        max
+    };
+
+    // Vectorize once — k-means++ sampling is randomized per run, so comparing
+    // outputs across separate vectorize calls would be non-deterministic.
+    let data = vectorize_enhanced(
+        &image_data,
+        &EnhancedOptions {
+            num_colors: 4,
+            preprocess: false,
+            ..Default::default()
+        },
+    )
+    .expect("vectorize_enhanced");
+
+    let svg1 = img2svg::generate_enhanced_svg_prec(&data, 1);
+    assert!(svg1.contains("d=\""), "expected path data in SVG");
+    assert!(max_decimals(&svg1) <= 1, "precision 1 violated");
+
+    let svg3 = img2svg::generate_enhanced_svg_prec(&data, 3);
+    assert!(max_decimals(&svg3) <= 3, "precision 3 violated");
+    assert!(svg3.len() >= svg1.len(), "higher precision should not shrink output");
+
+    // Default writer matches the historical 2-decimal behavior.
+    assert_eq!(generate_enhanced_svg(&data), img2svg::generate_enhanced_svg_prec(&data, 2));
+
+    // File writer honors coordinate_precision for SVG output.
+    let out1 = PathBuf::from("/tmp/img2svg_precision_p1.svg");
+    img2svg::convert_enhanced_data(
+        &image_data,
+        &out1,
+        &EnhancedOptions {
+            num_colors: 4,
+            preprocess: false,
+            coordinate_precision: 1,
+            ..Default::default()
+        },
+        Some(EnhancedOutputFormat::Svg),
+    )
+    .expect("write precision 1");
+    let file1 = fs::read_to_string(&out1).expect("read p1 svg");
+    assert!(file1.contains("d=\""), "expected path data in file SVG");
+    assert!(max_decimals(&file1) <= 1, "file output precision 1 violated");
+
+    let _ = fs::remove_file(&test_img);
+    let _ = fs::remove_file(&out1);
+}
+
+#[test]
 fn test_convert_legacy_writes_svg() {
     let test_img = PathBuf::from("/tmp/img2svg_lib_convert.png");
     let test_svg = PathBuf::from("/tmp/img2svg_lib_convert.svg");

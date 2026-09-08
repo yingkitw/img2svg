@@ -1,7 +1,7 @@
 //! EPS and minimal PDF export from vector data.
 
 use crate::bezier_fitter::{bezier_to_svg_path_to, is_linear_curve, BezierCurve};
-use crate::enhanced_vectorizer::{write_enhanced_svg, EnhancedVectorData};
+use crate::enhanced_vectorizer::{write_enhanced_svg_prec, EnhancedVectorData};
 use crate::image_processor::Result;
 use crate::svg_generator::color_with_alpha;
 use crate::vectorizer::{Point, VectorizedData};
@@ -393,8 +393,25 @@ pub fn write_enhanced_output(
     output_path: &Path,
     format: EnhancedOutputFormat,
 ) -> Result<()> {
+    write_enhanced_output_prec(
+        data,
+        output_path,
+        format,
+        crate::bezier_fitter::DEFAULT_COORDINATE_PRECISION,
+    )
+}
+
+/// Write enhanced vector data using the requested output format with
+/// user-controlled SVG coordinate precision (1-6 decimal places, clamped).
+/// Non-SVG formats always use the default precision.
+pub fn write_enhanced_output_prec(
+    data: &EnhancedVectorData,
+    output_path: &Path,
+    format: EnhancedOutputFormat,
+    precision: u32,
+) -> Result<()> {
     match format {
-        EnhancedOutputFormat::Svg => write_enhanced_svg(data, output_path),
+        EnhancedOutputFormat::Svg => write_enhanced_svg_prec(data, output_path, precision),
         EnhancedOutputFormat::Eps => write_enhanced_eps(data, output_path),
         EnhancedOutputFormat::Pdf => write_enhanced_pdf(data, output_path),
         EnhancedOutputFormat::Ai => write_enhanced_ai(data, output_path),
@@ -433,6 +450,7 @@ mod tests {
                 color: (200, 30, 30, 255),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             }],
         }

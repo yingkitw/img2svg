@@ -259,6 +259,7 @@ mod tests {
                 color: (255, 0, 0, 255),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             }],
         };
@@ -287,6 +288,7 @@ mod tests {
                 color: (0, 255, 0, 255),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             }],
         };
@@ -315,6 +317,7 @@ mod tests {
                 color: (0, 0, 255, 255),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             }],
         };

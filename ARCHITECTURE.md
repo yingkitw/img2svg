@@ -23,7 +23,7 @@ src/
 │   ├── morphology.rs       # Erosion, dilation, opening, closing, top-hat
 │   ├── segmentation.rs     # Watershed, mean shift, SLIC superpixels
 │   └── thresholding.rs     # Otsu, adaptive thresholding
-├── despeckle.rs              # Potrace-style speckle / small-region removal
+├── despeckle.rs             # Potrace-style speckle / small-region removal
 ├── centerline_tracer.rs      # Skeletonization + centerline polyline tracing
 ├── logo_pipeline.rs        # Fill/outline layer separation for logos
 ├── eps_generator.rs        # EPS/PDF/AI vector export
@@ -61,6 +61,8 @@ examples/
 │   ├── medium.svg
 │   ├── complex.svg
 │   └── very_complex.svg
+├── comparison.html         # Side-by-side original vs enhanced viewer
+├── README.md               # Per-image purpose and recommended flags
 └── convert_all.sh          # Batch conversion script
 ```
 
@@ -184,6 +186,9 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Evenodd fill-rule**: `fill-rule="evenodd"` applied when hole subpaths are present
 - **Progress logging**: Stage-by-stage `eprintln!` output during vectorization for large images
 - **Incremental SVG generation**: `generate_enhanced_svg_to` writes directly to `Write` implementors
+- **Adjustable coordinate precision**: `EnhancedOptions.coordinate_precision` (1–6, default 2) flows through the `bezier_to_svg_path_to_prec` writer chain; non-SVG formats and thin-stripe rects (integers) are unaffected
+- **Parameterized curve merging**: `EnhancedOptions.optimize_tolerance` (default 1.5) controls Potrace `-O` style merging via `optimize_bezier_curves_with_tolerance`
+- **Native gradient fills**: opt-in `EnhancedOptions.detect_gradients` runs `gradient_detector` per color mask against the **original** image and emits `<defs>` `<linearGradient>`/`<radialGradient>` fills (`url(#img2svg-grad-N)`), deduplicated and emitted before all paths
 - **Zero-length segment removal**: Duplicate formatted coordinates skipped in `create_subpath_string`
 
 ### New Features (merged from vec project)
@@ -276,7 +281,8 @@ batch_convert_to_pdf(
 
 - `image` (0.24) — raster image loading (PNG, JPEG, BMP, TIFF, WebP, etc.)
 - `clap` (4.0) — CLI argument parsing
-- `serde` / `serde_json` — Serialization for MCP protocol
+- `svg` (0.13) — SVG document building helpers
+- `serde` / `serde_json` — optional, behind the `mcp` feature; serialization for MCP protocol
 - `rgb` (0.8) — RGBA8 pixel type
 - `anyhow` — Error handling
 - `thiserror` — Error derive macros
@@ -284,9 +290,9 @@ batch_convert_to_pdf(
 - `rand` (0.10) — K-means++ random centroid selection (enhanced pipeline)
 
 ### Test Dependencies
-- (dev-dependencies only)
+- `criterion` (0.5, dev-dependency) — benchmark harness for `benches/pipeline_comparison.rs`
 - Test images in `examples/input/`
-- 455 test executions: 197 lib + 202 bin + 16 MCP + 37 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` tests only run in the binary target). Run with `cargo test --features mcp` to include the MCP binary tests
+- 480 test executions: 203 lib + 219 bin + 17 MCP + 38 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` and now `gradient_detector` tests run in both targets). Run with `cargo test --features mcp` to include the MCP binary tests
 
 ## Performance Characteristics
 

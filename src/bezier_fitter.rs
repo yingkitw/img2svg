@@ -527,12 +527,22 @@ impl BezierFitter {
     }
 }
 
-/// Write a formatted number directly to a writer (avoids returning a String).
-fn fmt_num_to<W: Write>(writer: &mut W, v: f64) -> IoResult<()> {
+/// Default number of decimal places used when writing SVG path coordinates.
+pub const DEFAULT_COORDINATE_PRECISION: u32 = 2;
+
+/// Clamp a requested coordinate precision to the supported 1..=6 range.
+pub fn clamp_precision(p: u32) -> u32 {
+    p.clamp(1, 6)
+}
+
+/// Write a formatted number with the requested decimal precision directly to
+/// a writer (avoids returning a String). Whole numbers collapse to integers
+/// and trailing zeros are trimmed.
+pub fn write_num_to<W: Write>(writer: &mut W, v: f64, precision: u32) -> IoResult<()> {
     if (v - v.round()).abs() < 1e-4 {
         write!(writer, "{}", v.round() as i64)
     } else {
-        let s = format!("{:.2}", v);
+        let s = format!("{:.*}", precision as usize, v);
         let trimmed = s.trim_end_matches('0').trim_end_matches('.');
         write!(writer, "{}", trimmed)
     }
@@ -544,14 +554,26 @@ pub fn bezier_to_svg_path_to<W: Write>(
     curves: &[BezierCurve],
     closed: bool,
 ) -> IoResult<()> {
+    bezier_to_svg_path_to_prec(writer, curves, closed, DEFAULT_COORDINATE_PRECISION)
+}
+
+/// Stream Bézier curves as SVG path data directly to a writer, with
+/// user-controlled coordinate precision (1-6 decimal places, clamped).
+pub fn bezier_to_svg_path_to_prec<W: Write>(
+    writer: &mut W,
+    curves: &[BezierCurve],
+    closed: bool,
+    precision: u32,
+) -> IoResult<()> {
+    let precision = clamp_precision(precision);
     if curves.is_empty() {
         return Ok(());
     }
 
     write!(writer, "M",)?;
-    fmt_num_to(writer, curves[0].start.x)?;
+    write_num_to(writer, curves[0].start.x, precision)?;
     write!(writer, ",",)?;
-    fmt_num_to(writer, curves[0].start.y)?;
+    write_num_to(writer, curves[0].start.y, precision)?;
 
     let mut i = 0;
     while i < curves.len() {
@@ -583,23 +605,23 @@ pub fn bezier_to_svg_path_to<W: Write>(
                 }
             }
             write!(writer, "L",)?;
-            fmt_num_to(writer, end.x)?;
+            write_num_to(writer, end.x, precision)?;
             write!(writer, ",",)?;
-            fmt_num_to(writer, end.y)?;
+            write_num_to(writer, end.y, precision)?;
             i = j;
         } else {
             write!(writer, "C",)?;
-            fmt_num_to(writer, curve.control1.x)?;
+            write_num_to(writer, curve.control1.x, precision)?;
             write!(writer, ",",)?;
-            fmt_num_to(writer, curve.control1.y)?;
+            write_num_to(writer, curve.control1.y, precision)?;
             write!(writer, " ",)?;
-            fmt_num_to(writer, curve.control2.x)?;
+            write_num_to(writer, curve.control2.x, precision)?;
             write!(writer, ",",)?;
-            fmt_num_to(writer, curve.control2.y)?;
+            write_num_to(writer, curve.control2.y, precision)?;
             write!(writer, " ",)?;
-            fmt_num_to(writer, curve.end.x)?;
+            write_num_to(writer, curve.end.x, precision)?;
             write!(writer, ",",)?;
-            fmt_num_to(writer, curve.end.y)?;
+            write_num_to(writer, curve.end.y, precision)?;
             i += 1;
         }
     }
@@ -670,8 +692,19 @@ fn merge_linear_curves(a: &BezierCurve, b: &BezierCurve) -> BezierCurve {
     }
 }
 
+/// Default merge tolerance (px) for Potrace `-O` style spline optimization.
+pub const DEFAULT_OPTIMIZE_TOLERANCE: f64 = 1.5;
+
 /// Potrace `-O` style spline optimization: collinearize then merge consecutive nearly-linear segments.
+#[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
 pub fn optimize_bezier_curves(curves: &mut Vec<BezierCurve>) {
+    optimize_bezier_curves_with_tolerance(curves, DEFAULT_OPTIMIZE_TOLERANCE);
+}
+
+/// Potrace `-O` style spline optimization with a user-controlled merge
+/// tolerance (max perpendicular distance in px for merging nearly-linear
+/// segments). Higher values merge more aggressively and shrink path counts.
+pub fn optimize_bezier_curves_with_tolerance(curves: &mut Vec<BezierCurve>, tolerance: f64) {
     if curves.len() < 2 {
         optimize_bezier_corners(curves);
         return;
@@ -704,7 +737,7 @@ pub fn optimize_bezier_curves(curves: &mut Vec<BezierCurve>) {
             }
             let mid = &current.end;
             let dist = ((mid.y - start.y) * dx - (mid.x - start.x) * dy).abs() / line_len;
-            if dist < 1.5 {
+            if dist < tolerance {
                 current = merge_linear_curves(&current, next);
                 i += 1;
             } else {
@@ -833,7 +866,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fmt_num_to_compact_format() {
+    fn test_write_num_to_compact_format() {
         let cases = [
             (0.0, "0"),
             (1.0, "1"),
@@ -845,10 +878,113 @@ mod tests {
         ];
         for (v, expected) in cases {
             let mut buf = Vec::new();
-            fmt_num_to(&mut buf, v).unwrap();
+            write_num_to(&mut buf, v, 2).unwrap();
             let actual = String::from_utf8(buf).unwrap();
-            assert_eq!(actual, expected, "fmt_num_to mismatch for {}", v);
+            assert_eq!(actual, expected, "write_num_to mismatch for {}", v);
         }
+    }
+
+    #[test]
+    fn test_write_num_to_precision() {
+        // Precision 1: rounds to one decimal, trims trailing zero.
+        let mut buf = Vec::new();
+        write_num_to(&mut buf, 1.2345, 1).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "1.2");
+
+        // Precision 3: keeps three decimals.
+        let mut buf = Vec::new();
+        write_num_to(&mut buf, 1.2346, 3).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "1.235");
+
+        // Precision 1 on a whole number collapses to integer.
+        let mut buf = Vec::new();
+        write_num_to(&mut buf, 7.0, 1).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "7");
+
+        // Values above 6 are clamped.
+        let mut buf = Vec::new();
+        write_num_to(&mut buf, 1.2345678, 99).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.starts_with("1.23456"), "unexpected: {}", s);
+    }
+
+    #[test]
+    fn test_bezier_to_svg_path_to_prec() {
+        let curves = vec![BezierCurve {
+            start: Point { x: 0.0, y: 0.0 },
+            control1: Point { x: 5.0, y: 0.5 },
+            control2: Point { x: 0.5, y: 6.0 },
+            end: Point { x: 5.6789, y: 6.7890 },
+        }];
+
+        let mut buf = Vec::new();
+        bezier_to_svg_path_to_prec(&mut buf, &curves, true, 1).unwrap();
+        let p1 = String::from_utf8(buf).unwrap();
+        assert_eq!(p1, "M0,0C5,0.5 0.5,6 5.7,6.8Z");
+
+        let mut buf = Vec::new();
+        bezier_to_svg_path_to_prec(&mut buf, &curves, true, 3).unwrap();
+        let p3 = String::from_utf8(buf).unwrap();
+        assert_eq!(p3, "M0,0C5,0.5 0.5,6 5.679,6.789Z");
+
+        // Default precision matches the historical 2-decimal output.
+        let mut buf = Vec::new();
+        bezier_to_svg_path_to(&mut buf, &curves, true).unwrap();
+        let default = String::from_utf8(buf).unwrap();
+        assert_eq!(default, "M0,0C5,0.5 0.5,6 5.68,6.79Z");
+    }
+
+    #[test]
+    fn test_clamp_precision() {
+        assert_eq!(clamp_precision(0), 1);
+        assert_eq!(clamp_precision(1), 1);
+        assert_eq!(clamp_precision(2), 2);
+        assert_eq!(clamp_precision(6), 6);
+        assert_eq!(clamp_precision(100), 6);
+    }
+
+    /// A chain of collinear segments with one segment slightly off the line
+    /// (perpendicular offset `off`), plus a sharp 90° corner at the end.
+    fn almost_collinear_chain(off: f64) -> Vec<BezierCurve> {
+        let lin = |x0: f64, y0: f64, x1: f64, y1: f64| BezierCurve {
+            start: Point { x: x0, y: y0 },
+            control1: Point {
+                x: x0 + (x1 - x0) / 3.0,
+                y: y0 + (y1 - y0) / 3.0,
+            },
+            control2: Point {
+                x: x0 + 2.0 * (x1 - x0) / 3.0,
+                y: y0 + 2.0 * (y1 - y0) / 3.0,
+            },
+            end: Point { x: x1, y: y1 },
+        };
+        vec![
+            lin(0.0, 0.0, 10.0, 0.0),
+            lin(10.0, 0.0, 20.0, off), // slightly off the y=0 line
+            lin(20.0, off, 20.0, 10.0), // 90° corner — must never merge
+        ]
+    }
+
+    #[test]
+    fn test_optimize_tolerance_controls_merging() {
+        // Offset 1.0 → midpoint distance ≈ 0.25: below 1.5 merges, above does not.
+        let mut strict = almost_collinear_chain(1.0);
+        optimize_bezier_curves_with_tolerance(&mut strict, 0.1);
+        assert_eq!(strict.len(), 3, "tolerance 0.1 must not merge offset 1.0");
+
+        let mut loose = almost_collinear_chain(1.0);
+        optimize_bezier_curves_with_tolerance(&mut loose, 1.5);
+        assert!(loose.len() < 3, "tolerance 1.5 should merge offset 1.0");
+
+        // Offset 5.0 → midpoint distance ≈ 1.21: tolerance 1.0 must not merge it.
+        let mut far = almost_collinear_chain(5.0);
+        optimize_bezier_curves_with_tolerance(&mut far, 1.0);
+        assert_eq!(far.len(), 3, "offset beyond tolerance must not merge");
+
+        // Default wrapper matches the historical behavior.
+        let mut default = almost_collinear_chain(1.0);
+        optimize_bezier_curves(&mut default);
+        assert_eq!(default.len(), loose.len(), "wrapper must match default tolerance");
     }
 
     #[test]

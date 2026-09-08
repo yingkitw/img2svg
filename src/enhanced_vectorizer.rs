@@ -7,7 +7,7 @@
 //!
 //! The original marching-squares pipeline is preserved in vectorizer.rs for comparison.
 
-use crate::bezier_fitter::{bezier_to_svg_path_to, optimize_bezier_corners, optimize_bezier_curves, BezierCurve, BezierFitter};
+use crate::bezier_fitter::{bezier_to_svg_path_to_prec, optimize_bezier_corners, optimize_bezier_curves_with_tolerance, BezierCurve, BezierFitter};
 use crate::despeckle::despeckle;
 use crate::edge_detector::detect_edges_sobel;
 use crate::enhanced_quantizer::{
@@ -141,12 +141,22 @@ pub struct EnhancedOptions {
     pub optimize_corners: bool,
     /// Potrace `-O` style merge of consecutive nearly-linear curve segments
     pub optimize_curves: bool,
+    /// Merge tolerance (px) for `optimize_curves` (default 1.5; higher = more aggressive)
+    pub optimize_tolerance: f64,
     /// Separate fill and outline layers for logos
     pub logo_mode: bool,
     /// Show a progress bar on stderr during vectorization.
     pub progress: bool,
     /// Auto-select tuning parameters based on image characteristics.
     pub autotrace: bool,
+    /// Decimal places for SVG path coordinates (1-6, default 2).
+    /// Lower values shrink the output file; higher values preserve detail.
+    pub coordinate_precision: u32,
+    /// Detect smooth linear/radial gradients per region and render them as
+    /// native SVG `<defs>` gradient fills (default false).
+    pub detect_gradients: bool,
+    /// Max fit MSE for gradient detection (default 50.0; lower = stricter).
+    pub gradient_error_threshold: f64,
 }
 
 impl Default for EnhancedOptions {
@@ -166,9 +176,13 @@ impl Default for EnhancedOptions {
             centerline: false,
             optimize_corners: false,
             optimize_curves: false,
+            optimize_tolerance: crate::bezier_fitter::DEFAULT_OPTIMIZE_TOLERANCE,
             logo_mode: false,
             progress: false,
             autotrace: false,
+            coordinate_precision: crate::bezier_fitter::DEFAULT_COORDINATE_PRECISION,
+            detect_gradients: false,
+            gradient_error_threshold: 50.0,
         }
     }
 }
@@ -189,6 +203,9 @@ pub struct EnhancedPath {
     pub area: usize,
     /// Pre-built SVG path data for thin stripe rects (bypasses bezier_to_svg_path).
     pub svg_override: Option<String>,
+    /// Detected gradient for this path's region (rendered as a `<defs>` gradient
+    /// fill when output as SVG). `None` unless `EnhancedOptions.detect_gradients`.
+    pub gradient: Option<crate::gradient_detector::DetectedGradient>,
     /// Stroke-only path (centerline / logo outline)
     pub stroke_only: bool,
 }
@@ -356,9 +373,16 @@ pub fn vectorize_enhanced(
         ),
     );
 
-    // For each color: build binary mask → marching squares → smooth → simplify → Bézier fit
-    // Collect (display_color, pixel_count, contours) tuples for parallel processing
-    let color_contours: Vec<((u8, u8, u8, u8), usize, Vec<bool>, Vec<Vec<Point>>)> = color_list
+    // For each color: build binary mask → [optional gradient detection] → marching squares
+    // → smooth → simplify → Bézier fit
+    // Collect (display_color, pixel_count, mask, contours, gradient) tuples for parallel processing
+    let color_contours: Vec<(
+        (u8, u8, u8, u8),
+        usize,
+        Vec<bool>,
+        Vec<Vec<Point>>,
+        Option<crate::gradient_detector::DetectedGradient>,
+    )> = color_list
         .iter()
         .filter(|(color, _)| *color != bg_quantized)
         .map(|(color, pixels)| {
@@ -366,17 +390,28 @@ pub fn vectorize_enhanced(
             for &(x, y) in pixels {
                 mask[y * width + x] = true;
             }
+            // Optional gradient detection against the ORIGINAL image: quantized
+            // regions are flat, so the smooth variation only exists pre-quantization.
+            let gradient = if options.detect_gradients {
+                crate::gradient_detector::detect_gradient(
+                    image_data,
+                    &mask,
+                    options.gradient_error_threshold,
+                )
+            } else {
+                None
+            };
             let contours = marching_squares_contours(&mask, width, height);
             // Use recolored color for display if available
             let display_color = recolor_map.get(color).copied().unwrap_or(*color);
-            (display_color, pixels.len(), mask, contours)
+            (display_color, pixels.len(), mask, contours, gradient)
         })
         .collect();
 
     // Parallel: for each contour, smooth → simplify → Bézier fit
     let mut enhanced_paths: Vec<EnhancedPath> = color_contours
         .par_iter()
-        .flat_map(|(color, pixel_count, mask, contours)| {
+        .flat_map(|(color, pixel_count, mask, contours, gradient)| {
             let mut paths = Vec::new();
 
             for contour in contours {
@@ -412,6 +447,7 @@ pub fn vectorize_enhanced(
                         color: *color,
                         area: *pixel_count,
                         svg_override: Some(svg),
+                        gradient: gradient.clone(),
                         stroke_only: false,
                     });
                     continue;
@@ -472,7 +508,7 @@ pub fn vectorize_enhanced(
                     optimize_bezier_corners(&mut curves);
                 }
                 if options.optimize_curves {
-                    optimize_bezier_curves(&mut curves);
+                    optimize_bezier_curves_with_tolerance(&mut curves, options.optimize_tolerance);
                 }
 
                 // Clamp control points to image bounds (prevents bulging corners)
@@ -489,6 +525,7 @@ pub fn vectorize_enhanced(
                         color: *color,
                         area: *pixel_count,
                         svg_override: None,
+                        gradient: gradient.clone(),
                         stroke_only: false,
                     });
                 }
@@ -506,7 +543,7 @@ pub fn vectorize_enhanced(
                             optimize_bezier_corners(&mut ocurves);
                         }
                         if options.optimize_curves {
-                            optimize_bezier_curves(&mut ocurves);
+                            optimize_bezier_curves_with_tolerance(&mut ocurves, options.optimize_tolerance);
                         }
                         if !ocurves.is_empty() {
                             paths.push(EnhancedPath {
@@ -514,6 +551,7 @@ pub fn vectorize_enhanced(
                                 color: ocolor,
                                 area: outline.len(),
                                 svg_override: None,
+                                gradient: None,
                                 stroke_only: true,
                             });
                         }
@@ -568,7 +606,7 @@ fn vectorize_centerline(
             optimize_bezier_corners(&mut curves);
         }
         if options.optimize_curves {
-            optimize_bezier_curves(&mut curves);
+            optimize_bezier_curves_with_tolerance(&mut curves, options.optimize_tolerance);
         }
         if !curves.is_empty() {
             paths.push(EnhancedPath {
@@ -576,6 +614,7 @@ fn vectorize_centerline(
                 color: (0, 0, 0, 255),
                 area: poly.len(),
                 svg_override: None,
+                gradient: None,
                 stroke_only: true,
             });
         }
@@ -688,8 +727,17 @@ fn polygon_area(points: &[Point]) -> f64 {
 /// Uses gap-filling strokes and consecutive same-color path grouping.
 #[allow(dead_code)] // Re-exported at crate root; clippy cannot see the chain.
 pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
+    generate_enhanced_svg_prec(
+        data,
+        crate::bezier_fitter::DEFAULT_COORDINATE_PRECISION,
+    )
+}
+
+/// Generate SVG string from enhanced vector data with user-controlled
+/// coordinate precision (1-6 decimal places, clamped).
+pub fn generate_enhanced_svg_prec(data: &EnhancedVectorData, precision: u32) -> String {
     let mut buffer = Vec::new();
-    if let Err(e) = generate_enhanced_svg_to(data, &mut buffer) {
+    if let Err(e) = generate_enhanced_svg_to_prec(data, &mut buffer, precision) {
         // This should not fail for an in-memory Vec, but propagate just in case
         panic!("Failed to generate enhanced SVG: {}", e);
     }
@@ -704,15 +752,108 @@ pub fn generate_enhanced_svg(data: &EnhancedVectorData) -> String {
 /// **Zero-allocation path streaming**: Paths are streamed directly without
 /// collecting them into intermediate `ColorGroup` vectors or `path_data` strings.
 /// A single reusable scratch buffer is used per color group.
+#[allow(dead_code)] // Re-exported at crate root; bin target uses the _prec variant.
 pub fn generate_enhanced_svg_to<W: Write>(
     data: &EnhancedVectorData,
     writer: &mut W,
 ) -> Result<()> {
+    generate_enhanced_svg_to_prec(data, writer, crate::bezier_fitter::DEFAULT_COORDINATE_PRECISION)
+}
+
+/// Build a `<linearGradient>`/`<radialGradient>` def string with the given id.
+fn gradient_svg_def(id: &str, g: &crate::gradient_detector::DetectedGradient) -> String {
+    use crate::gradient_detector::DetectedGradient;
+    fn stop(offset: &str, c: (u8, u8, u8, u8)) -> String {
+        if c.3 < 255 {
+            format!(
+                r##"<stop offset="{offset}" stop-color="#{:02x}{:02x}{:02x}" stop-opacity="{:.2}"/>"##,
+                c.0,
+                c.1,
+                c.2,
+                c.3 as f64 / 255.0
+            )
+        } else {
+            format!(
+                r##"<stop offset="{offset}" stop-color="#{:02x}{:02x}{:02x}"/>"##,
+                c.0, c.1, c.2
+            )
+        }
+    }
+    let stops = |start: (u8, u8, u8, u8), end: (u8, u8, u8, u8)| {
+        format!("{}{}", stop("0", start), stop("1", end))
+    };
+    match g {
+        DetectedGradient::Linear(l) => format!(
+            r#"<linearGradient id="{id}" gradientUnits="userSpaceOnUse" x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}">{}</linearGradient>"#,
+            l.x1,
+            l.y1,
+            l.x2,
+            l.y2,
+            stops(l.start_color, l.end_color)
+        ),
+        DetectedGradient::Radial(r) => format!(
+            r#"<radialGradient id="{id}" gradientUnits="userSpaceOnUse" cx="{:.2}" cy="{:.2}" r="{:.2}">{}</radialGradient>"#,
+            r.cx,
+            r.cy,
+            r.r,
+            stops(r.start_color, r.end_color)
+        ),
+    }
+}
+
+/// Collect unique gradient defs for all fill paths.
+/// Returns the `<defs>...</defs>` block (empty when no gradients) and, for each
+/// path index carrying a gradient, the id of its (deduplicated) gradient def.
+fn collect_gradient_defs(
+    paths: &[EnhancedPath],
+) -> (String, std::collections::HashMap<usize, String>) {
+    use crate::gradient_detector::DetectedGradient;
+    let mut ids: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    let mut seen: Vec<(DetectedGradient, String)> = Vec::new();
+    let mut defs: Vec<String> = Vec::new();
+    for (i, path) in paths.iter().enumerate() {
+        if path.stroke_only {
+            continue;
+        }
+        if let Some(g) = &path.gradient {
+            let id = match seen.iter().find(|(g2, _)| g2 == g) {
+                Some((_, id)) => id.clone(),
+                None => {
+                    let id = format!("img2svg-grad-{}", defs.len());
+                    defs.push(gradient_svg_def(&id, g));
+                    seen.push((g.clone(), id.clone()));
+                    id
+                }
+            };
+            ids.insert(i, id);
+        }
+    }
+    if defs.is_empty() {
+        (String::new(), ids)
+    } else {
+        (format!("<defs>{}</defs>", defs.join("")), ids)
+    }
+}
+
+/// Incrementally write enhanced SVG to any `Write` implementor with
+/// user-controlled coordinate precision (1-6 decimal places, clamped).
+///
+/// See [`generate_enhanced_svg_to`] for the default-precision variant.
+pub fn generate_enhanced_svg_to_prec<W: Write>(
+    data: &EnhancedVectorData,
+    writer: &mut W,
+    precision: u32,
+) -> Result<()> {
+    let precision = crate::bezier_fitter::clamp_precision(precision);
+    let (defs_block, gradient_ids) = collect_gradient_defs(&data.paths);
     writeln!(
         writer,
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">"#,
         data.width, data.height, data.width, data.height
     )?;
+    if !defs_block.is_empty() {
+        writeln!(writer, "  {}", defs_block)?;
+    }
 
     // Background rect
     let bg = data.background_color;
@@ -732,10 +873,11 @@ pub fn generate_enhanced_svg_to<W: Write>(
     // collecting all paths into a Vec<ColorGroup> first.
     let mut scratch: Vec<u8> = Vec::with_capacity(4096);
     let mut current_color: Option<(u8, u8, u8, u8)> = None;
+    let mut current_gradient_id: Option<String> = None;
     let mut current_hex = String::with_capacity(7);
     let mut has_data = false;
 
-    for path in &data.paths {
+    for (path_idx, path) in data.paths.iter().enumerate() {
         if path.stroke_only {
             let color = path.color;
             let hex = format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2);
@@ -753,7 +895,7 @@ pub fn generate_enhanced_svg_to<W: Write>(
             if let Some(ref svg) = path.svg_override {
                 writer.write_all(svg.as_bytes())?;
             } else {
-                bezier_to_svg_path_to(writer, &path.curves, false)?;
+                bezier_to_svg_path_to_prec(writer, &path.curves, false, precision)?;
             }
             writeln!(writer, r#""/>"#)?;
             continue;
@@ -771,16 +913,21 @@ pub fn generate_enhanced_svg_to<W: Write>(
                 } else {
                     String::new()
                 };
+                let fill_attr = match &current_gradient_id {
+                    Some(id) => format!("fill=\"url(#{})\"", id),
+                    None => format!("fill=\"{}\"", current_hex),
+                };
                 write!(
                     writer,
-                    r#"  <path fill="{}" stroke="{}" stroke-width="0.5" stroke-linejoin="round"{} d=""#,
-                    current_hex, current_hex, opacity_attr
+                    r#"  <path {} stroke="{}" stroke-width="0.5" stroke-linejoin="round"{} d=""#,
+                    fill_attr, current_hex, opacity_attr
                 )?;
                 writer.write_all(&scratch)?;
                 writeln!(writer, r#""/>"#)?;
             }
 
             current_color = Some(path_color);
+            current_gradient_id = gradient_ids.get(&path_idx).cloned();
             current_hex = format!("#{:02x}{:02x}{:02x}", path_color.0, path_color.1, path_color.2);
             scratch.clear();
             has_data = false;
@@ -795,10 +942,10 @@ pub fn generate_enhanced_svg_to<W: Write>(
             if (max_x - min_x) < 1.0 && (max_y - min_y) < 1.0 {
                 // skip degenerate subpath
             } else {
-                bezier_to_svg_path_to(&mut scratch, &path.curves, true)?;
+                bezier_to_svg_path_to_prec(&mut scratch, &path.curves, true, precision)?;
             }
         } else {
-            bezier_to_svg_path_to(&mut scratch, &path.curves, true)?;
+            bezier_to_svg_path_to_prec(&mut scratch, &path.curves, true, precision)?;
         }
 
         if scratch.len() > scratch_len_before {
@@ -815,10 +962,14 @@ pub fn generate_enhanced_svg_to<W: Write>(
         } else {
             String::new()
         };
+        let fill_attr = match &current_gradient_id {
+            Some(id) => format!("fill=\"url(#{})\"", id),
+            None => format!("fill=\"{}\"", current_hex),
+        };
         write!(
             writer,
-            r#"  <path fill="{}" stroke="{}" stroke-width="0.5" stroke-linejoin="round"{} d=""#,
-            current_hex, current_hex, opacity_attr
+            r#"  <path {} stroke="{}" stroke-width="0.5" stroke-linejoin="round"{} d=""#,
+            fill_attr, current_hex, opacity_attr
         )?;
         writer.write_all(&scratch)?;
         writeln!(writer, r#""/>"#)?;
@@ -830,8 +981,18 @@ pub fn generate_enhanced_svg_to<W: Write>(
 
 /// Write enhanced SVG to a file incrementally (low memory footprint).
 pub fn write_enhanced_svg(data: &EnhancedVectorData, output_path: &std::path::Path) -> Result<()> {
+    write_enhanced_svg_prec(data, output_path, crate::bezier_fitter::DEFAULT_COORDINATE_PRECISION)
+}
+
+/// Write enhanced SVG to a file incrementally with user-controlled
+/// coordinate precision (1-6 decimal places, clamped).
+pub fn write_enhanced_svg_prec(
+    data: &EnhancedVectorData,
+    output_path: &std::path::Path,
+    precision: u32,
+) -> Result<()> {
     let mut file = std::fs::File::create(output_path)?;
-    generate_enhanced_svg_to(data, &mut file)?;
+    generate_enhanced_svg_to_prec(data, &mut file, precision)?;
     Ok(())
 }
 
@@ -1130,6 +1291,7 @@ mod tests {
                 color: (255, 0, 0, 128),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             },
         ];
@@ -1156,6 +1318,7 @@ mod tests {
                 color: (255, 0, 0, 128),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             },
             EnhancedPath {
@@ -1168,6 +1331,7 @@ mod tests {
                 color: (0, 255, 0, 255),
                 area: 50,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             },
         ];
@@ -1199,6 +1363,7 @@ mod tests {
                 color: (255, 0, 0, 255),
                 area: 100,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             },
             EnhancedPath {
@@ -1211,6 +1376,7 @@ mod tests {
                 color: (255, 0, 0, 255), // same color
                 area: 50,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             },
             EnhancedPath {
@@ -1223,6 +1389,7 @@ mod tests {
                 color: (0, 0, 255, 255), // different color
                 area: 80,
                 svg_override: None,
+                gradient: None,
                 stroke_only: false,
             },
         ];
@@ -1306,5 +1473,95 @@ mod tests {
         assert!(tuned.preprocess);
         assert!(!tuned.logo_mode);
         assert!(!tuned.optimize_corners);
+    }
+
+    #[test]
+    fn test_coordinate_precision_limits_decimals() {
+        // Gradient-ish image produces curved contours with fractional coords.
+        let mut pixels = Vec::with_capacity(40 * 40);
+        for y in 0..40 {
+            for x in 0..40 {
+                pixels.push(rgb::RGBA8::new((x * 6) as u8, (y * 6) as u8, 128, 255));
+            }
+        }
+        let img = ImageData { width: 40, height: 40, pixels };
+        let data = vectorize_enhanced(
+            &img,
+            &EnhancedOptions {
+                num_colors: 4,
+                preprocess: false,
+                ..Default::default()
+            },
+        )
+        .expect("vectorize");
+
+        let count_decimals = |svg: &str| -> usize {
+            // Max fractional digit count over every number inside d="...".
+            let mut max = 0;
+            for attr in svg.split("d=\"").skip(1) {
+                let d = attr.split('"').next().unwrap_or("");
+                for token in d.split(['M', 'L', 'C', 'Z', ' ', ',']).filter(|t| !t.is_empty()) {
+                    if let Some(dot) = token.find('.') {
+                        max = max.max(token.len() - dot - 1);
+                    }
+                }
+            }
+            max
+        };
+
+        let p1 = generate_enhanced_svg_prec(&data, 1);
+        let p3 = generate_enhanced_svg_prec(&data, 3);
+        assert!(p1.contains("d=\"") && (p1.contains("<path") || p1.contains("<rect")));
+        assert!(count_decimals(&p1) <= 1, "precision 1 violated: {}", p1);
+        assert!(count_decimals(&p3) <= 3, "precision 3 violated: {}", p3);
+        // Higher precision preserves at least as much information (>= size).
+        assert!(
+            p3.len() >= p1.len(),
+            "precision 3 output ({} B) smaller than precision 1 ({} B)",
+            p3.len(),
+            p1.len()
+        );
+        // Default writer matches the historical 2-decimal behavior.
+        assert_eq!(generate_enhanced_svg(&data), generate_enhanced_svg_prec(&data, 2));
+    }
+
+    #[test]
+    fn test_detect_gradients_emits_svg_defs() {
+        // Solid white background + a horizontal black→white gradient block.
+        let mut pixels = vec![rgb::RGBA8::new(255, 255, 255, 255); 40 * 40];
+        for y in 10..30 {
+            for x in 10..30 {
+                let t = ((x - 10) * 12) as u8;
+                pixels[y * 40 + x] = rgb::RGBA8::new(t, t, t, 255);
+            }
+        }
+        let img = ImageData { width: 40, height: 40, pixels };
+        let opts = |gradients: bool| EnhancedOptions {
+            num_colors: 8,
+            preprocess: false,
+            detect_gradients: gradients,
+            ..Default::default()
+        };
+
+        // Detection runs on the ORIGINAL image, so quantized bands of the
+        // gradient block each carry horizontal variance and are detected.
+        let data = vectorize_enhanced(&img, &opts(true)).expect("vectorize gradients");
+        assert!(
+            data.paths.iter().any(|p| p.gradient.is_some()),
+            "expected at least one detected gradient"
+        );
+        let svg = generate_enhanced_svg(&data);
+        assert!(svg.contains("<defs>"), "defs block missing: {}", svg);
+        assert!(svg.contains("<linearGradient"), "linearGradient missing");
+        assert!(svg.contains("fill=\"url(#img2svg-grad-"), "gradient fill missing");
+        // <defs> must be emitted before the first <path>.
+        let defs_pos = svg.find("<defs>").expect("defs present");
+        let path_pos = svg.find("<path").expect("path present");
+        assert!(defs_pos < path_pos, "defs must precede paths");
+
+        // Flag off (default): output must not contain gradient defs.
+        let data_plain = vectorize_enhanced(&img, &opts(false)).expect("vectorize plain");
+        assert!(data_plain.paths.iter().all(|p| p.gradient.is_none()));
+        assert!(!generate_enhanced_svg(&data_plain).contains("<defs>"));
     }
 }

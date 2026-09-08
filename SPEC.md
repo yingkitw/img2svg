@@ -27,29 +27,36 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--tune`: Generate HTML parameter comparison grid
   - `--progress`: Show stage-based progress bar on stderr during vectorization
   - `--autotrace`: Auto-select tuning parameters (colors, smoothing, simplification, preprocess, optimizations) based on image characteristics
-  - `--format`: Output format — `svg`, `eps`, `pdf`, or `ai` (default `svg`; inferred from `-o` extension)
+   - `--format`: Output format — `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (default `svg`; inferred from `-o` extension). Enhanced pipeline supports all formats; with `--original`, only `svg`/`eps` are written directly (other formats fall back to SVG with a note)
+   - `--precision`: Decimal places for SVG path coordinates, 1-6 (default 2; enhanced pipeline only; lower values shrink output)
+   - `--stats`: Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed ms) after conversion
+   - `--gradients`: Detect smooth gradients per region (against the original image) and render them as native SVG `<defs>` gradient fills
 
 ### MCP Tool (`convert_image_to_svg`)
 - Default pipeline: **enhanced Bézier** (matches CLI without `--original`)
 - `input_path`, `output_path` (required)
 - `legacy` (boolean, default false): median-cut / RDP line-segment pipeline
 - `num_colors`, `preprocess` (default true), `preset` (`logo`|`photo`|`icon`)
-- `centerline`, `logo_mode`, `superpixel`, `optimize_corners` (booleans)
-- `output_format`: `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath`
+- `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `optimize_curves` (booleans)
+- `min_region_area` (integer, default 20): despeckle threshold
+- `coordinate_precision` (integer, 1-6, default 2): SVG path coordinate decimals
+- `optimize_tolerance` (number, default 1.5): merge tolerance for `optimize_curves`
+- `gradients` (boolean, default false): native SVG gradient fills for smooth regions
+- `output_format`: `svg`, `eps`, `pdf`, or `ai` (default `svg`, or inferred from output path extension)
 - `smooth_level`, `threshold` (legacy only)
 - `max_size`, `progress_token`
 - Response `details`: `pipeline`, `output_format`, `output_size_bytes`, `width`, `height`, `colors_used`
 
 ### MCP Tool (`convert_image_directory`)
 - Batch convert all supported images in `input_dir` → `output_dir` (enhanced pipeline only)
+- `input_dir`, `output_dir` (required); same optional flags as single-file (except `legacy`)
+- Response `details`: `total`, `converted`, `errors`, `files[]` with per-file `success` / `error`
 
 ### MCP Tool (`convert_image_directory_to_pdf`)
 - Combine all supported images in `input_dir` → one multi-page PDF at `output_path` (enhanced pipeline only)
 - `input_dir`, `output_path` (required; output must be a `.pdf` file path, not a directory)
 - Same optional flags as `convert_image_directory` (no `output_format`)
 - Response `details`: `pipeline`, `output_format` (`pdf`), `output_size_bytes`, `output_path`, `total`, `converted`, `errors`, `files`
-- `input_dir`, `output_dir` (required); same optional flags as single-file (except `legacy`)
-- Response `details`: `total`, `converted`, `errors`, `files[]` with per-file `success` / `error`
 
 ## Output
 - Vector file: SVG (default), EPS, minimal PDF, Illustrator-compatible AI wrapper, DXF, GeoJSON, or GIMP path
@@ -100,7 +107,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 455 test executions passing (197 lib + 202 bin + 16 MCP + 37 integration + 3 doctests); 249+ unique tests (run with `cargo test --features mcp` to include the MCP binary tests)
+- ✅ 480 test executions passing (203 lib + 219 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -129,7 +136,7 @@ Applied before quantization for photographs:
 
 ## Test Suite
 
-### Unit Tests (273 unique tests total)
+### Unit Tests
 - `image_processor_tests.rs`: ~25 tests
   - Image data creation and validation
   - Color quantization with various parameters
@@ -166,15 +173,17 @@ Applied before quantization for photographs:
   - Conversion options defaults
   - `is_supported_image`
   - `convert_enhanced_to_svg_string`
-- `cli.rs`: 13 tests
+- `cli.rs`: 20 tests
   - Preset defaults and override semantics
   - Supported image extension checks
-  - `--progress` and `--autotrace` flag parsing
+  - `--progress`, `--autotrace`, `--stats`, and `--gradients` flag parsing
   - `--format` inference and explicit format parsing
-- `mcp.rs`: 14 tests
+  - `--precision` parsing, default, and range rejection
+  - `--optimize-tolerance` default and parsing
+- `mcp.rs`: 17 tests
   - Server initialization, tool schema, validation, enhanced default, legacy, preset, EPS export, batch directory, progress
 
-### Integration Tests (34 total)
+### Integration Tests (38 total)
 - Full pipeline conversion tests (legacy + enhanced)
 - Test image creation (gradient, checkerboard, circle, solid)
 - SVG output validation
@@ -230,11 +239,15 @@ Recommended: img2svg -i lenna.png -o lenna.svg --preprocess -c 12
 - `convert`
 - `convert_to_svg_string`
 - `convert_enhanced` / `convert_enhanced_to_svg_string` / `convert_enhanced_data`
-- `batch_convert_enhanced` / `is_supported_image`
+- `batch_convert_enhanced` / `batch_convert_to_pdf` / `is_supported_image`
 - `despeckle` / `min_region_area` on `EnhancedOptions`
 - `optimize_bezier_corners` / `optimize_bezier_curves`
-- `write_enhanced_output` / `EnhancedOutputFormat`
-- Gradient detection (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`)
+- `write_enhanced_output` / `write_enhanced_output_prec` / `EnhancedOutputFormat`
+- Coordinate precision (`coordinate_precision` on `EnhancedOptions`, `clamp_precision`, `DEFAULT_COORDINATE_PRECISION`, `*_prec` writer variants)
+- Curve-merge tolerance (`optimize_tolerance` on `EnhancedOptions`, `optimize_bezier_curves_with_tolerance`, `DEFAULT_OPTIMIZE_TOLERANCE`)
+- `write_enhanced_eps` / `write_enhanced_pdf` / `write_enhanced_ai` / `write_multi_page_pdf`
+- `write_enhanced_dxf` / `write_enhanced_geojson` / `write_enhanced_gimppath`
+- Gradient detection (`detect_gradient`, `detect_linear_gradient`, `detect_radial_gradient`) and native SVG gradient output (`EnhancedOptions.detect_gradients`)
 - Animated GIF loading (`load_animated_gif`, `GifFrame`) and per-frame SVG conversion (`convert_animated_gif`)
 - CMYK color space support (`cmyk_to_rgb`, `image_data_from_cmyk`, `detect_color_space`, `ColorSpace`)
 - Image filters (`median_filter`, `weighted_median_filter`, `CannyEdgeDetector`, `UnsharpMask`, `HighBoostFilter`, `HistogramEqualizer`, `CLAHE`, `AdaptiveToneMapper`, `SmartThreshold`, etc.)

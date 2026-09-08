@@ -28,6 +28,10 @@
 
 /// Cubic Bézier curve fitting with Newton-Raphson reparameterization.
 pub mod bezier_fitter;
+pub use bezier_fitter::{
+    clamp_precision, optimize_bezier_curves_with_tolerance, DEFAULT_COORDINATE_PRECISION,
+    DEFAULT_OPTIMIZE_TOLERANCE,
+};
 /// Sobel edge detection for gradient-based edge maps.
 pub mod edge_detector;
 /// K-means++ initialization and edge-aware color quantization.
@@ -68,7 +72,8 @@ pub mod vectorizer;
 pub use anyhow::Result;
 /// Re-export enhanced vectorization pipeline types and functions.
 pub use enhanced_vectorizer::{
-    generate_enhanced_svg, generate_enhanced_svg_to, vectorize_enhanced, write_enhanced_svg,
+    generate_enhanced_svg, generate_enhanced_svg_prec, generate_enhanced_svg_to,
+    generate_enhanced_svg_to_prec, vectorize_enhanced, write_enhanced_svg, write_enhanced_svg_prec,
     EnhancedOptions, EnhancedPath, EnhancedVectorData,
 };
 /// Re-export image filter functions and types.
@@ -85,8 +90,8 @@ pub use image_filters::{
     SepiaFilter, SmartThreshold, UnsharpMask, VignetteFilter, VintageFilter, CLAHE, HSL, LAB,
 };
 pub use eps_generator::{
-    write_enhanced_ai, write_enhanced_eps, write_enhanced_output, write_enhanced_pdf,
-    write_multi_page_pdf, write_vectorized_eps, EnhancedOutputFormat,
+    write_enhanced_ai, write_enhanced_eps, write_enhanced_output, write_enhanced_output_prec,
+    write_enhanced_pdf, write_multi_page_pdf, write_vectorized_eps, EnhancedOutputFormat,
 };
 pub use extra_backends::{
     write_enhanced_dxf, write_enhanced_geojson, write_enhanced_gimppath,
@@ -407,7 +412,12 @@ pub fn convert_enhanced_data(
 ) -> Result<EnhancedVectorData> {
     let fmt = format.unwrap_or_else(|| EnhancedOutputFormat::from_path(output_path));
     let data = vectorize_enhanced(image_data, options)?;
-    write_enhanced_output(&data, output_path, fmt)?;
+    write_enhanced_output_prec(
+        &data,
+        output_path,
+        fmt,
+        clamp_precision(options.coordinate_precision),
+    )?;
     Ok(data)
 }
 
@@ -447,7 +457,10 @@ pub fn convert_enhanced_to_svg_string(
     options: &EnhancedOptions,
 ) -> Result<String> {
     let data = vectorize_enhanced(image_data, options)?;
-    Ok(generate_enhanced_svg(&data))
+    Ok(generate_enhanced_svg_prec(
+        &data,
+        clamp_precision(options.coordinate_precision),
+    ))
 }
 
 #[cfg(test)]

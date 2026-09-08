@@ -148,7 +148,10 @@ struct ConvertToolArgs {
     superpixel: bool,
     optimize_corners: bool,
     optimize_curves: bool,
+    optimize_tolerance: f64,
     min_region_area: usize,
+    coordinate_precision: u32,
+    detect_gradients: bool,
     preset: Option<Preset>,
     output_format: EnhancedOutputFormat,
     max_size: u32,
@@ -215,11 +218,25 @@ impl ConvertToolArgs {
                 .get("optimize_curves")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            optimize_tolerance: args
+                .get("optimize_tolerance")
+                .and_then(|v| v.as_f64())
+                .filter(|t| *t > 0.0)
+                .unwrap_or(img2svg::DEFAULT_OPTIMIZE_TOLERANCE),
             min_region_area: args
                 .get("min_region_area")
                 .and_then(|v| v.as_i64())
                 .map(|v| v.max(0) as usize)
                 .unwrap_or(20),
+            coordinate_precision: args
+                .get("coordinate_precision")
+                .and_then(|v| v.as_i64())
+                .map(|v| img2svg::clamp_precision(v.max(0) as u32))
+                .unwrap_or(img2svg::DEFAULT_COORDINATE_PRECISION),
+            detect_gradients: args
+                .get("gradients")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             preset: args
                 .get("preset")
                 .and_then(|v| v.as_str())
@@ -247,7 +264,10 @@ impl ConvertToolArgs {
             use_superpixel: self.superpixel,
             optimize_corners: self.optimize_corners,
             optimize_curves: self.optimize_curves,
+            optimize_tolerance: self.optimize_tolerance,
             min_region_area: self.min_region_area,
+            coordinate_precision: self.coordinate_precision,
+            detect_gradients: self.detect_gradients,
             ..Default::default()
         };
         if let Some(p) = self.preset {
@@ -385,11 +405,29 @@ fn shared_convert_properties() -> Value {
             "description": "Potrace `-O` style merge of consecutive nearly-linear curve segments",
             "default": false
         },
+        "optimize_tolerance": {
+            "type": "number",
+            "description": "Merge tolerance in pixels for optimize_curves (higher merges more). Default: 1.5.",
+            "minimum": 0.1,
+            "default": 1.5
+        },
         "min_region_area": {
             "type": "integer",
             "description": "Despeckle: merge connected regions smaller than this (pixels). 0 = off. Default: 20.",
             "minimum": 0,
             "default": 20
+        },
+        "coordinate_precision": {
+            "type": "integer",
+            "description": "Decimal places for SVG path coordinates (1-6). Lower values shrink the output file. Default: 2.",
+            "minimum": 1,
+            "maximum": 6,
+            "default": 2
+        },
+        "gradients": {
+            "type": "boolean",
+            "description": "Detect smooth gradients per region and render them as native SVG gradient fills.",
+            "default": false
         },
         "output_format": {
             "type": "string",
@@ -466,7 +504,10 @@ impl Img2SvgMcpServer {
                                 "superpixel": shared["superpixel"],
                                 "optimize_corners": shared["optimize_corners"],
                                 "optimize_curves": shared["optimize_curves"],
+                                "optimize_tolerance": shared["optimize_tolerance"],
                                 "min_region_area": shared["min_region_area"],
+                                "coordinate_precision": shared["coordinate_precision"],
+                                "gradients": shared["gradients"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
@@ -496,7 +537,10 @@ impl Img2SvgMcpServer {
                                 "superpixel": shared["superpixel"],
                                 "optimize_corners": shared["optimize_corners"],
                                 "optimize_curves": shared["optimize_curves"],
+                                "optimize_tolerance": shared["optimize_tolerance"],
                                 "min_region_area": shared["min_region_area"],
+                                "coordinate_precision": shared["coordinate_precision"],
+                                "gradients": shared["gradients"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
@@ -526,7 +570,10 @@ impl Img2SvgMcpServer {
                                 "superpixel": shared["superpixel"],
                                 "optimize_corners": shared["optimize_corners"],
                                 "optimize_curves": shared["optimize_curves"],
+                                "optimize_tolerance": shared["optimize_tolerance"],
                                 "min_region_area": shared["min_region_area"],
+                                "coordinate_precision": shared["coordinate_precision"],
+                                "gradients": shared["gradients"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
                             },
@@ -874,6 +921,9 @@ mod tests {
         assert!(props.contains_key("legacy"));
         assert!(props.contains_key("preset"));
         assert!(props.contains_key("centerline"));
+        assert!(props.contains_key("coordinate_precision"));
+        assert!(props.contains_key("optimize_tolerance"));
+        assert!(props.contains_key("gradients"));
         let required = tools[0]["inputSchema"]["required"]
             .as_array()
             .expect("required");
@@ -1047,6 +1097,37 @@ mod tests {
         assert!(text.contains("%!PS-Adobe"));
         let res = r.result.unwrap();
         assert_eq!(res["details"]["output_format"], "eps");
+        let _ = std::fs::remove_file(&out);
+    }
+
+    #[test]
+    fn tools_call_convert_with_coordinate_precision() {
+        let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/input/simple.png");
+        if !input.exists() {
+            return;
+        }
+        let out = std::env::temp_dir().join("img2svg_mcp_precision.svg");
+        let _ = std::fs::remove_file(&out);
+
+        let s = Img2SvgMcpServer;
+        let r = s.handle_tools_call(
+            super::ToolCallParams {
+                name: "convert_image_to_svg".to_string(),
+                arguments: json!({
+                    "input_path": input.to_str().unwrap(),
+                    "output_path": out.to_str().unwrap(),
+                    "num_colors": 8,
+                    "preprocess": false,
+                    "coordinate_precision": 1,
+                }),
+            },
+            json!(103),
+        );
+
+        assert!(r.error.is_none(), "{:?}", r.error);
+        assert!(out.exists());
+        let text = std::fs::read_to_string(&out).expect("read svg");
+        assert!(text.contains("<path") || text.contains("<rect"));
         let _ = std::fs::remove_file(&out);
     }
 

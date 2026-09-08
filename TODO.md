@@ -20,13 +20,13 @@
 - [x] Unit tests for image_processor (~25 tests)
 - [x] Unit tests for vectorizer (~41 tests)
 - [x] Unit tests for svg_generator (~26 tests)
-- [x] Integration tests (34 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS/autotrace/DXF/GeoJSON/Gimppath**, **animated GIF / CMYK / WebP / BMP / JPEG**
+- [x] Integration tests (38 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS/autotrace/DXF/GeoJSON/Gimppath**, **coordinate precision**, **animated GIF / CMYK / WebP / BMP / JPEG**
 - [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides, **`--progress`** / **`--autotrace`** flags, **`--format`** inference (13 tests, `src/cli.rs`)
 - [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (14 tests, `src/mcp.rs`)
 - [x] MCP enhanced pipeline as default; `legacy`, `preset`, mode flags, and `output_format` parameters
 - [x] MCP batch tool `convert_image_directory` + library `batch_convert_enhanced()`
 - [x] Library API tests (3 doctests + 3 unit tests)
-- [x] Run `cargo test` for full counts (197 lib + 202 bin + 16 `img2svg-mcp` + 37 integration + 3 doctests = 455 test executions; `cargo test --features mcp` for the MCP binary)
+- [x] Run `cargo test` for full counts (203 lib + 219 bin + 17 `img2svg-mcp` + 38 integration + 3 doctests = 480 test executions; `cargo test --features mcp` for the MCP binary)
 - [x] Criterion benchmark `benches/pipeline_comparison.rs` (original vs enhanced at 128/256/512 px)
 
 ### Project Structure
@@ -116,6 +116,12 @@
 - [x] Unit tests for multi-page PDF (structure, MediaBoxes, xref offsets, y-flip; 5 tests in `src/eps_generator.rs`)
 - [x] Integration tests for single-page PDF export, multi-page PDF from pages, and batch directory → PDF (3 tests)
 - [x] MCP `convert_image_directory_to_pdf` tool (schema + 2 tests; success path + missing-params error)
+- [x] User-controlled SVG coordinate precision: `--precision` / `EnhancedOptions.coordinate_precision` / MCP `coordinate_precision` (vtracer `path_precision` parity; library API `*_prec` writers; 13 new tests, 468 total executions)
+- [x] `--stats` flag: per-file conversion summary (dimensions, paths, colors, output size, elapsed ms)
+- [x] `--optimize-tolerance` / `EnhancedOptions.optimize_tolerance` / MCP `optimize_tolerance`: parameterized curve-merge tolerance (Potrace `--opttolerance` parity)
+- [x] Native SVG gradient output: `--gradients` / `EnhancedOptions.detect_gradients` / MCP `gradients` wires `gradient_detector` into the enhanced pipeline — detected regions render as `<defs>` `<linearGradient>`/`<radialGradient>` fills (opt-in; detection runs against the original image; 8 new tests, 480 total executions)
+- [x] Documentation audit: fixed version drift, MCP install instructions (`--features mcp`), MCP schema enums, test counts, TOC anchors across README/SPEC/ARCHITECTURE
+- [x] MEMORY.md created (pipeline, writer, CLI/MCP, and testing patterns harvested)
 
 ## Pending 🚧
 
@@ -123,15 +129,16 @@
 
 ## Maybe / Future Considerations 💭
 
+Seeded by competitive intelligence (Potrace / vtracer / Inkscape, 2026-09-08):
+
+- [ ] Whole-region gradient merging: detect one gradient spanning multiple adjacent quantized bands (current detection is per-band; see MEMORY.md gradient notes)
+- [ ] vtracer-style stacked vs cutout layer hierarchy modes
 - [ ] Plugin system for custom color quantization algorithms
 - [ ] Machine learning-based color palette generation
 - [ ] Support for spot color (Pantone) matching
 - [ ] Layer-aware vectorization for Photoshop files
 - [ ] Vector-to-raster comparison tools
 - [ ] Multi-color hierarchical SVG layers (Inkscape-style grouped paths per color)
-- [x] CLI progress bar for large image / batch conversions (Potrace `--progress`)
-- [x] Additional vector export backends: DXF, GeoJSON, Gimppath (Potrace)
-- [x] `--autotrace` mode that auto-selects the best quantization/filter strategy (Inkscape Autotrace)
 
 ### Competitive gaps (from Potrace, vtracer, Inkscape trace)
 - [x] Corner optimization / curve optimization pass (Potrace-style)

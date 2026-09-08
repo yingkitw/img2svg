@@ -15,6 +15,7 @@ mod centerline_tracer;
 mod logo_pipeline;
 mod eps_generator;
 mod extra_backends;
+mod gradient_detector;
 mod tune;
 
 use anyhow::Result;
@@ -22,7 +23,7 @@ use cli::{enhanced_preprocess, parse_args, is_supported_image, Cli, OutputFormat
 use eps_generator::{write_enhanced_ai, write_enhanced_eps, write_enhanced_pdf, write_vectorized_eps};
 use extra_backends::{write_enhanced_dxf, write_enhanced_geojson, write_enhanced_gimppath};
 use preprocessor::{preprocess, PreprocessOptions};
-use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg, EnhancedOptions, EnhancedVectorData};
+use enhanced_vectorizer::{vectorize_enhanced, write_enhanced_svg_prec, EnhancedOptions, EnhancedVectorData};
 use std::path::{Path, PathBuf};
 
 fn is_gif(path: &Path) -> bool {
@@ -40,6 +41,7 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         centerline: cli.centerline,
         optimize_corners: cli.optimize_corners,
         optimize_curves: cli.optimize_curves,
+        optimize_tolerance: cli.optimize_tolerance,
         logo_mode: cli.logo_mode,
         min_region_area: if cli.no_despeckle {
             0
@@ -48,6 +50,8 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         },
         progress: cli.progress,
         autotrace: cli.autotrace,
+        coordinate_precision: cli.precision,
+        detect_gradients: cli.gradients,
         ..Default::default()
     }
 }
@@ -78,9 +82,14 @@ fn output_format(cli: &Cli, output_path: &Path) -> OutputFormat {
     }
 }
 
-fn write_enhanced_output(data: &EnhancedVectorData, path: &Path, format: OutputFormat) -> Result<()> {
+fn write_enhanced_output(
+    data: &EnhancedVectorData,
+    path: &Path,
+    format: OutputFormat,
+    precision: u32,
+) -> Result<()> {
     match format {
-        OutputFormat::Svg => write_enhanced_svg(data, path),
+        OutputFormat::Svg => write_enhanced_svg_prec(data, path, precision),
         OutputFormat::Eps => write_enhanced_eps(data, path),
         OutputFormat::Pdf => write_enhanced_pdf(data, path),
         OutputFormat::Ai => write_enhanced_ai(data, path),
@@ -154,7 +163,12 @@ fn process_animated_gif(
         } else {
             let options = enhanced_options(cli);
             let vector_data = vectorize_enhanced(&image_data, &options)?;
-            write_enhanced_output(&vector_data, &out_path, output_format(cli, &out_path))?;
+            write_enhanced_output(
+                &vector_data,
+                &out_path,
+                output_format(cli, &out_path),
+                options.coordinate_precision,
+            )?;
         }
 
         eprintln!("  Frame {}/{} -> {}", i + 1, total, out_path.display());
@@ -169,6 +183,7 @@ fn process_file(
     output_path: &Path,
     cli: &Cli,
 ) -> Result<()> {
+    let started = std::time::Instant::now();
     eprintln!("  Loading image...");
     let mut image_data = image_processor::load_image(input_path)?;
 
@@ -208,12 +223,32 @@ fn process_file(
         } else {
             write_original_output(&vectorized_data, output_path, output_format(cli, output_path), false)?;
         }
+
+        if cli.stats {
+            let mut colors = std::collections::HashSet::new();
+            for curve in &vectorized_data.curves {
+                colors.insert(curve.color);
+            }
+            print_stats(
+                output_path,
+                image_data.width,
+                image_data.height,
+                vectorized_data.curves.len(),
+                colors.len(),
+                started,
+            );
+        }
     } else {
         let options = enhanced_options(cli);
         eprintln!("  Vectorizing with enhanced pipeline...");
         let vector_data = vectorize_enhanced(&image_data, &options)?;
         eprintln!("  Generating output...");
-        write_enhanced_output(&vector_data, output_path, output_format(cli, output_path))?;
+        write_enhanced_output(
+            &vector_data,
+            output_path,
+            output_format(cli, output_path),
+            options.coordinate_precision,
+        )?;
         eprintln!(
             "  {} paths, background #{:02x}{:02x}{:02x}",
             vector_data.paths.len(),
@@ -221,9 +256,53 @@ fn process_file(
             vector_data.background_color.1,
             vector_data.background_color.2,
         );
+
+        if cli.stats {
+            let mut colors = std::collections::HashSet::new();
+            colors.insert(vector_data.background_color);
+            for path in &vector_data.paths {
+                colors.insert(path.color);
+            }
+            print_stats(
+                output_path,
+                vector_data.width,
+                vector_data.height,
+                vector_data.paths.len(),
+                colors.len(),
+                started,
+            );
+        }
     }
 
     Ok(())
+}
+
+/// Print a one-line conversion summary (file size, dimensions, paths, colors, elapsed time).
+fn print_stats(
+    output_path: &Path,
+    width: u32,
+    height: u32,
+    paths: usize,
+    colors: usize,
+    started: std::time::Instant,
+) {
+    let out_size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+    let size_str = if out_size >= 1024 * 1024 {
+        format!("{:.1} MB", out_size as f64 / (1024.0 * 1024.0))
+    } else if out_size >= 1024 {
+        format!("{:.1} KB", out_size as f64 / 1024.0)
+    } else {
+        format!("{} B", out_size)
+    };
+    eprintln!(
+        "  Stats: {}x{}, {} paths, {} colors, {} output, {} ms",
+        width,
+        height,
+        paths,
+        colors,
+        size_str,
+        started.elapsed().as_millis()
+    );
 }
 
 /// Combine every supported image in `input_dir` into a single multi-page PDF.

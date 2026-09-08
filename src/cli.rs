@@ -111,6 +111,10 @@ pub struct Cli {
     #[arg(long)]
     pub optimize_curves: bool,
 
+    /// Merge tolerance in pixels for --optimize-curves (default: 1.5; higher merges more)
+    #[arg(long, default_value = "1.5")]
+    pub optimize_tolerance: f64,
+
     /// Logo mode: separate fill regions and outline strokes
     #[arg(long)]
     pub logo_mode: bool,
@@ -138,6 +142,18 @@ pub struct Cli {
     /// Output format (default: svg, or inferred from file extension)
     #[arg(long, value_enum, default_value = "svg")]
     pub format: OutputFormat,
+
+    /// Decimal places for SVG path coordinates (1-6, default: 2)
+    #[arg(long, default_value = "2", value_parser = clap::value_parser!(u32).range(1..=6))]
+    pub precision: u32,
+
+    /// Print conversion stats (dimensions, paths, colors, output size, time) after conversion
+    #[arg(long)]
+    pub stats: bool,
+
+    /// Detect smooth gradients per region and render them as native SVG gradient fills
+    #[arg(long)]
+    pub gradients: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq, Default)]
@@ -329,5 +345,61 @@ mod tests {
     fn format_gimppath_parses() {
         let cli = parse_args(["img2svg", "-i", "shape.png", "--format", "gimppath"]);
         assert_eq!(cli.format, OutputFormat::Gimppath);
+    }
+
+    #[test]
+    fn precision_defaults_to_2() {
+        let cli = parse_args(["img2svg", "-i", "logo.png"]);
+        assert_eq!(cli.precision, 2);
+    }
+
+    #[test]
+    fn precision_flag_parses() {
+        let cli = parse_args(["img2svg", "-i", "logo.png", "--precision", "1"]);
+        assert_eq!(cli.precision, 1);
+    }
+
+    #[test]
+    fn precision_out_of_range_rejected() {
+        let result = Cli::command().try_get_matches_from([
+            "img2svg",
+            "-i",
+            "logo.png",
+            "--precision",
+            "7",
+        ]);
+        assert!(result.is_err(), "precision 7 should be rejected");
+    }
+
+    #[test]
+    fn stats_flag_parses() {
+        let cli = parse_args(["img2svg", "-i", "logo.png", "--stats"]);
+        assert!(cli.stats);
+        let default = parse_args(["img2svg", "-i", "logo.png"]);
+        assert!(!default.stats);
+    }
+
+    #[test]
+    fn optimize_tolerance_defaults_and_parses() {
+        let default = parse_args(["img2svg", "-i", "logo.png"]);
+        assert!((default.optimize_tolerance - 1.5).abs() < f64::EPSILON);
+        let custom = parse_args([
+            "img2svg",
+            "-i",
+            "logo.png",
+            "--optimize-curves",
+            "--optimize-tolerance",
+            "3",
+        ]);
+        assert!(custom.optimize_curves);
+        assert!((custom.optimize_tolerance - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn gradients_flag_parses() {
+        let cli = parse_args(["img2svg", "-i", "gradient.png", "--gradients"]);
+        assert!(cli.gradients);
+        let default = parse_args(["img2svg", "-i", "gradient.png"]);
+        assert!(!default.gradients);
     }
 }

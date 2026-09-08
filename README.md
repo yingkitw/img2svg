@@ -2,7 +2,7 @@
 
 **img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
-[![Tests](https://img.shields.io/badge/tests-455%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-480%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
 [![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -17,15 +17,13 @@
 - [Key Features](#key-features)
 - [At a Glance](#at-a-glance)
 - [Installation](#installation)
-- [CLI Usage](#cli-usage)
-- [Rust Library Usage](#rust-library-usage)
-- [MCP Server (for AI Assistants)](#mcp-server-for-ai-assistants)
+- [Usage](#usage)
 - [Examples & Quality](#examples--quality)
 - [Algorithm](#algorithm)
-- [Performance & Benchmarks](#performance--benchmarks)
+- [Performance](#performance)
 - [Tips for Best Results](#tips-for-best-results)
-- [Comparison with Alternatives](#comparison-with-alternatives)
 - [Limitations](#limitations)
+- [Contributing](#contributing)
 - [FAQ](#faq)
 - [Contributing](#contributing)
 - [License](#license)
@@ -77,10 +75,11 @@ Converting raster images to vector format is essential for:
 11. **Hierarchical Decomposition**: `--hierarchical` mode preserves hole contours with `fill-rule="evenodd"`
 12. **Progress Logging**: Stage-by-stage progress output for large image conversions
 13. **Incremental SVG Generation**: Low-memory writer-based output for both pipelines (`generate_svg_to`, `generate_enhanced_svg_to`)
-14. **Gradient Detection**: `detect_gradient` identifies linear and radial gradients for native SVG `<linearGradient>` / `<radialGradient>` rendering
-15. **Animated GIF Support**: Converts each frame to a numbered SVG file (`output_001.svg`, `output_002.svg`, etc.)
-16. **CMYK Color Space Input**: `cmyk_to_rgb` conversion and JPEG APP14 marker detection for print workflow support
-17. **Flexible Usage**: CLI tool, Rust library, and MCP server
+14. **Native SVG Gradient Fills**: `--gradients` detects smooth linear/radial gradients per region and renders them as `<defs>` `<linearGradient>`/`<radialGradient>` fills
+15. **Adjustable Coordinate Precision**: `--precision` (1–6 decimals) trades path exactness for smaller SVG files
+16. **Animated GIF Support**: Converts each frame to a numbered SVG file (`output_001.svg`, `output_002.svg`, etc.)
+17. **CMYK Color Space Input**: `cmyk_to_rgb` conversion and JPEG APP14 marker detection for print workflow support
+18. **Flexible Usage**: CLI tool, Rust library, and MCP server
 
 ## Key Features
 
@@ -102,13 +101,13 @@ Converting raster images to vector format is essential for:
 |-----------|-------|
 | **Language** | Rust (edition 2024) |
 | **License** | Apache-2.0 |
-| **Latest version** | 0.1.10 |
+| **Latest version** | 0.1.12 |
 | **Supported inputs** | PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld |
 | **Supported outputs** | SVG, EPS, PDF (single or multi-page), AI, DXF, GeoJSON, GIMP path |
 | **Default pipeline** | Cubic Bézier with edge-aware quantization |
 | **CLI binary** | `img2svg` |
 | **MCP binary** | `img2svg-mcp` |
-| **Test count** | 455 passing (`cargo test --features mcp` for the MCP binary tests) |
+| **Test count** | 480 passing (`cargo test --features mcp` for the MCP binary tests) |
 | **Performance** | ~60–70 ms for a 512×512 image (release build) |
 | **Default max dimension** | 4096 px (auto-resizes larger images) |
 
@@ -244,17 +243,17 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-img2svg = "0.1.10"
+img2svg = "0.1.12"
 ```
 
 ### MCP Server
 
-The MCP binary is built from the same crate as the CLI (no separate directory):
+The MCP binary is built from the same crate as the CLI (no separate directory). The `mcp` feature is **not enabled by default**, so you must pass `--features mcp`:
 
 ```bash
 git clone https://github.com/yingkitw/img2svg.git
 cd img2svg
-cargo install --path .
+cargo install --path . --features mcp
 # installs img2svg and img2svg-mcp
 ```
 
@@ -308,6 +307,7 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--centerline` | | false | Stroke/centerline tracing for line art (stroke-only SVG paths) |
 | `--optimize-corners` | | false | Potrace-style Bézier corner optimization pass |
 | `--optimize-curves` | | false | Potrace `-O` style merge of consecutive nearly-linear segments |
+| `--optimize-tolerance` | | 1.5 | Merge tolerance in pixels for `--optimize-curves` (higher merges more aggressively) |
 | `--logo-mode` | | false | Separate fill regions and outline strokes (auto with `--preset logo`) |
 | `--min-region-area` | | 20 | Despeckle: merge connected regions smaller than N pixels (Potrace turdsize) |
 | `--no-despeckle` | | false | Disable despeckle pass |
@@ -315,6 +315,9 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--progress` | | false | Show a stage-based progress bar on stderr during vectorization |
 | `--autotrace` | | false | Auto-select tuning parameters based on image characteristics |
 | `--format` | | svg | Output format: `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (also inferred from `-o` extension) |
+| `--precision` | | 2 | Decimal places for SVG path coordinates (1–6). Lower values shrink the file (vtracer `path_precision` parity); enhanced pipeline only |
+| `--stats` | | false | Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed time) |
+| `--gradients` | | false | Detect smooth gradients per region and render them as native SVG `<defs>` gradient fills |
 
 **Presets** (explicit flags override preset defaults):
 
@@ -400,11 +403,11 @@ The MCP (Model Context Protocol) server is built into the same codebase and allo
 The MCP server binary is built automatically with the main project:
 
 ```bash
-# Build both CLI and MCP server
-cargo build --release
+# Build both CLI and MCP server (the mcp feature is not a default feature)
+cargo build --release --features mcp
 
 # Or install both binaries
-cargo install --path .
+cargo install --path . --features mcp
 ```
 
 The binaries will be:
@@ -449,6 +452,9 @@ The MCP server provides two tools:
   - `legacy` (optional): Use legacy line-segment pipeline (default: **false**)
   - `preset` (optional): `logo`, `photo`, or `icon`
   - `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `optimize_curves` (optional booleans)
+  - `min_region_area` (optional, default 20), `coordinate_precision` (optional, 1–6, default 2)
+  - `optimize_tolerance` (optional, default 1.5): merge tolerance for `optimize_curves`
+  - `gradients` (optional, default false): native SVG gradient fills for smooth regions
   - `output_format` (optional): `svg`, `eps`, `pdf`, or `ai`
   - `smooth_level`, `threshold` (optional): Legacy pipeline only
   - `max_size`, `progress_token` (optional)
@@ -589,13 +595,13 @@ A: PNG, JPEG, GIF (including animated), BMP, ICO, TIFF, WebP, PNM, TGA, DDS, and
 A: Yes. Alpha channels are preserved as `fill-opacity` and `stroke-opacity` attributes on the SVG output.
 
 **Q: How do I get the smallest SVG file size?**
-A: Use fewer colors (`-c 4` to `8`), enable `--preprocess` for photos, and choose the `logo` or `icon` preset for flat graphics. The enhanced pipeline also applies collinear merging and thin-stripe elimination by default.
+A: Use fewer colors (`-c 4` to `8`), enable `--preprocess` for photos, choose the `logo` or `icon` preset for flat graphics, and lower `--precision` to 1. The enhanced pipeline also applies collinear merging and thin-stripe elimination by default.
 
 **Q: Is img2svg free for commercial use?**
 A: Yes — img2svg is released under the Apache License 2.0, which permits commercial use, modification, and redistribution.
 
 **Q: How do I install img2svg?**
-A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.10"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release` (produces both `img2svg` and `img2svg-mcp` binaries).
+A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.12"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release --features mcp` (produces both `img2svg` and `img2svg-mcp` binaries).
 
 ## License
 
