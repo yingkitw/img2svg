@@ -424,6 +424,7 @@ pub fn vectorize_enhanced(
                     &mask,
                     options.gradient_error_threshold,
                 )
+                .map(|g| extend_gradient_endpoints(g, width, height))
             } else {
                 None
             };
@@ -893,6 +894,82 @@ fn gradient_svg_def(id: &str, g: &crate::gradient_detector::DetectedGradient) ->
     }
 }
 
+/// Extend a detected gradient's endpoints to cover the full image extent in
+/// the gradient direction. With `gradientUnits="userSpaceOnUse"`, this makes
+/// each quantized band render the correct *portion* of the full gradient
+/// rather than a compressed copy, so adjacent bands appear continuous.
+fn extend_gradient_endpoints(
+    g: crate::gradient_detector::DetectedGradient,
+    width: usize,
+    height: usize,
+) -> crate::gradient_detector::DetectedGradient {
+    use crate::gradient_detector::{DetectedGradient, LinearGradient, RadialGradient};
+    let w = width as f64;
+    let h = height as f64;
+    match g {
+        DetectedGradient::Linear(lin) => {
+            let dx = lin.x2 - lin.x1;
+            let dy = lin.y2 - lin.y1;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1e-9 {
+                return DetectedGradient::Linear(lin);
+            }
+            let ux = dx / len;
+            let uy = dy / len;
+            // Project all four image corners onto the gradient direction.
+            let corners = [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h)];
+            let mut t_min = f64::INFINITY;
+            let mut t_max = f64::NEG_INFINITY;
+            for &(cx, cy) in &corners {
+                let t = cx * ux + cy * uy;
+                t_min = t_min.min(t);
+                t_max = t_max.max(t);
+            }
+            // New endpoints: the extreme projections along the direction,
+            // placed at the image center in the perpendicular direction so
+            // the gradient line spans the full image.
+            let mid_x = w / 2.0;
+            let mid_y = h / 2.0;
+            // Perpendicular component of the center (stays fixed).
+            let perp = mid_x * ux + mid_y * uy;
+            let cx_perp = mid_x - perp * ux;
+            let cy_perp = mid_y - perp * uy;
+            DetectedGradient::Linear(LinearGradient {
+                x1: cx_perp + t_min * ux,
+                y1: cy_perp + t_min * uy,
+                x2: cx_perp + t_max * ux,
+                y2: cy_perp + t_max * uy,
+                start_color: lin.start_color,
+                end_color: lin.end_color,
+                error: lin.error,
+            })
+        }
+        DetectedGradient::Radial(rad) => {
+            // Extend radius to cover the farthest image corner from the center.
+            let corners = [
+                (0.0, 0.0),
+                (w, 0.0),
+                (0.0, h),
+                (w, h),
+                (rad.cx, rad.cy),
+            ];
+            let max_r = corners
+                .iter()
+                .map(|&(cx, cy)| ((cx - rad.cx).powi(2) + (cy - rad.cy).powi(2)).sqrt())
+                .fold(0.0f64, f64::max)
+                .max(1.0);
+            DetectedGradient::Radial(RadialGradient {
+                cx: rad.cx,
+                cy: rad.cy,
+                r: max_r,
+                start_color: rad.start_color,
+                end_color: rad.end_color,
+                error: rad.error,
+            })
+        }
+    }
+}
+
 /// Collect unique gradient defs for all fill paths.
 /// Returns the `<defs>...</defs>` block (empty when no gradients) and, for each
 /// path index carrying a gradient, the id of its (deduplicated) gradient def.
@@ -940,22 +1017,70 @@ fn collect_gradient_defs(
 }
 
 /// Check whether `g1` is similar to `g2`.
-/// Similar means: same variant (Linear/Radial), and per-variant parameter
-/// proximity that indicates the same underlying colour transition.
+/// Similar means: same variant (Linear/Radial), compatible direction (for
+/// linear — roughly parallel), and compatible start/end colors. This prevents
+/// merging a horizontal gradient with a vertical one, or a red→blue gradient
+/// with a green→yellow one.
 fn gradient_is_similar(
     g1: &crate::gradient_detector::DetectedGradient,
     g2: &crate::gradient_detector::DetectedGradient,
 ) -> bool {
+    use crate::gradient_detector::{DetectedGradient, LinearGradient, RadialGradient};
+    const COLOR_TOL: f64 = 60.0; // per-channel tolerance for color matching
+    const DIR_TOL: f64 = 0.85; // dot-product threshold for parallel directions
+
     match (g1, g2) {
-        (
-            crate::gradient_detector::DetectedGradient::Linear(_),
-            crate::gradient_detector::DetectedGradient::Linear(_),
-        ) | (
-            crate::gradient_detector::DetectedGradient::Radial(_),
-            crate::gradient_detector::DetectedGradient::Radial(_),
-        ) => true,
+        (DetectedGradient::Linear(a), DetectedGradient::Linear(b)) => {
+            // Direction vectors.
+            let dx1 = a.x2 - a.x1;
+            let dy1 = a.y2 - a.y1;
+            let dx2 = b.x2 - b.x1;
+            let dy2 = b.y2 - b.y1;
+            let l1 = (dx1 * dx1 + dy1 * dy1).sqrt();
+            let l2 = (dx2 * dx2 + dy2 * dy2).sqrt();
+            if l1 < 1e-9 || l2 < 1e-9 {
+                return false;
+            }
+            let dot = ((dx1 * dx2 + dy1 * dy2) / (l1 * l2)).abs();
+            if dot < DIR_TOL {
+                return false;
+            }
+            // Colors: start/end may be swapped (eigenvector sign is arbitrary).
+            colors_compatible(a.start_color, a.end_color, b.start_color, b.end_color, COLOR_TOL)
+        }
+        (DetectedGradient::Radial(a), DetectedGradient::Radial(b)) => {
+            // Centers should be reasonably close.
+            let dc = ((a.cx - b.cx).powi(2) + (a.cy - b.cy).powi(2)).sqrt();
+            if dc > (a.r + b.r).max(50.0) * 0.5 {
+                return false;
+            }
+            colors_compatible(a.start_color, a.end_color, b.start_color, b.end_color, COLOR_TOL)
+        }
         _ => false,
     }
+}
+
+/// Check if two (start, end) color pairs are compatible, allowing for the
+/// start/end to be swapped (gradient direction sign is arbitrary).
+fn colors_compatible(
+    s1: (u8, u8, u8, u8),
+    e1: (u8, u8, u8, u8),
+    s2: (u8, u8, u8, u8),
+    e2: (u8, u8, u8, u8),
+    tol: f64,
+) -> bool {
+    let d = |a: (u8, u8, u8, u8), b: (u8, u8, u8, u8)| -> f64 {
+        ((a.0 as f64 - b.0 as f64).powi(2)
+            + (a.1 as f64 - b.1 as f64).powi(2)
+            + (a.2 as f64 - b.2 as f64).powi(2)
+            + (a.3 as f64 - b.3 as f64).powi(2))
+        .sqrt()
+    };
+    // Same direction: s1≈s2 and e1≈e2
+    let same = d(s1, s2) < tol && d(e1, e2) < tol;
+    // Swapped: s1≈e2 and e1≈s2
+    let swapped = d(s1, e2) < tol && d(e1, s2) < tol;
+    same || swapped
 }
 
 /// Find the first seen gradient similar to `g`, returning its id if found.

@@ -100,40 +100,91 @@ pub fn detect_linear_gradient(image_data: &ImageData, mask: &[bool]) -> Option<L
         return None;
     }
 
-    // Compute centroid
     let cx = mean(&xs);
     let cy = mean(&ys);
 
-    // Compute covariance matrix of positions weighted by luminance
+    // Bounding box for aspect-ratio check and endpoint extension.
+    let bx_min = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let bx_max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let by_min = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let by_max = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let bw = bx_max - bx_min;
+    let bh = by_max - by_min;
+
+    // Mean color for color-deviation weighting.
+    let mr = colors.iter().map(|c| c.r as f64).sum::<f64>() / colors.len() as f64;
+    let mg = colors.iter().map(|c| c.g as f64).sum::<f64>() / colors.len() as f64;
+    let mb = colors.iter().map(|c| c.b as f64).sum::<f64>() / colors.len() as f64;
+
+    // --- Candidate directions ---
+    // Try: PCA (color-deviation weighted), horizontal, vertical. Pick the
+    // direction with the best linear fit (lowest MSE). The PCA weight is the
+    // per-pixel color deviation from the mean color, so the principal
+    // direction aligns with the direction of greatest color change — not the
+    // spatial extent (which luminance weighting conflates for thin strips).
+    let mut candidates: Vec<(f64, f64)> = Vec::with_capacity(3);
+
+    // PCA direction (color-deviation weighted).
     let mut cov_xx = 0.0;
     let mut cov_yy = 0.0;
     let mut cov_xy = 0.0;
     for i in 0..xs.len() {
         let dx = xs[i] - cx;
         let dy = ys[i] - cy;
-        let lum = luminance(&colors[i]);
-        cov_xx += dx * dx * lum;
-        cov_yy += dy * dy * lum;
-        cov_xy += dx * dy * lum;
+        let dr = colors[i].r as f64 - mr;
+        let dg = colors[i].g as f64 - mg;
+        let db = colors[i].b as f64 - mb;
+        let w_ = (dr * dr + dg * dg + db * db).max(1e-6);
+        cov_xx += dx * dx * w_;
+        cov_yy += dy * dy * w_;
+        cov_xy += dx * dy * w_;
     }
-
-    // Principal direction (eigenvector of largest eigenvalue)
     let trace = cov_xx + cov_yy;
     let det = cov_xx * cov_yy - cov_xy * cov_xy;
     let discriminant = (trace * trace - 4.0 * det).max(0.0);
     let lambda1 = (trace + discriminant.sqrt()) / 2.0;
-    let _lambda2 = (trace - discriminant.sqrt()) / 2.0;
-
-    // Direction vector of principal component
-    let (dx, dy) = if cov_xy.abs() < 1e-6 {
-        (1.0, 0.0)
+    let pca_dir = if cov_xy.abs() < 1e-6 {
+        if cov_xx >= cov_yy { (1.0, 0.0) } else { (0.0, 1.0) }
     } else {
         let v = (lambda1 - cov_yy) / cov_xy;
         let len = (v * v + 1.0).sqrt();
         (v / len, 1.0 / len)
     };
+    candidates.push(pca_dir);
+    // Axis-aligned directions (reliable for thin strips where PCA is unstable).
+    candidates.push((1.0, 0.0));
+    candidates.push((0.0, 1.0));
 
-    // Project all points onto the principal direction
+    let mut best: Option<(f64, f64, f64, f64, LinearGradient)> = None;
+    for &(dx, dy) in &candidates {
+        let grad = fit_linear_in_direction(&xs, &ys, &colors, cx, cy, dx, dy, bx_min, by_min, bw, bh);
+        if let Some(g) = grad {
+            let score = g.error;
+            if best.as_ref().map_or(true, |b| score < b.0) {
+                best = Some((dx, dy, score, 0.0, g));
+            }
+        }
+    }
+
+    best.map(|(_, _, _, _, g)| g)
+}
+
+/// Fit a linear gradient along a fixed direction `(dx, dy)` and return the
+/// gradient if the fit is non-degenerate.
+fn fit_linear_in_direction(
+    xs: &[f64],
+    ys: &[f64],
+    colors: &[RGBA8],
+    cx: f64,
+    cy: f64,
+    dx: f64,
+    dy: f64,
+    _bx_min: f64,
+    _by_min: f64,
+    _bw: f64,
+    _bh: f64,
+) -> Option<LinearGradient> {
+    // Project all points onto the direction.
     let mut projections: Vec<f64> = xs
         .iter()
         .zip(ys.iter())
@@ -148,36 +199,47 @@ pub fn detect_linear_gradient(image_data: &ImageData, mask: &[bool]) -> Option<L
         return None;
     }
 
-    // Normalize projections to [0, 1]
     for p in &mut projections {
         *p = (*p - t_min) / t_range;
     }
 
-    // Fit start and end colors by linear regression per channel
-    let (start_r, end_r, err_r) = fit_line(&projections, &colors, |c| c.r as f64);
-    let (start_g, end_g, err_g) = fit_line(&projections, &colors, |c| c.g as f64);
-    let (start_b, end_b, err_b) = fit_line(&projections, &colors, |c| c.b as f64);
-    let (start_a, end_a, err_a) = fit_line(&projections, &colors, |c| c.a as f64);
+    let (start_r, end_r, err_r) = fit_line(&projections, colors, |c| c.r as f64);
+    let (start_g, end_g, err_g) = fit_line(&projections, colors, |c| c.g as f64);
+    let (start_b, end_b, err_b) = fit_line(&projections, colors, |c| c.b as f64);
+    let (start_a, end_a, err_a) = fit_line(&projections, colors, |c| c.a as f64);
 
     let error = (err_r + err_g + err_b + err_a) / 4.0;
+
+    let sc = (
+        start_r.round().clamp(0.0, 255.0) as u8,
+        start_g.round().clamp(0.0, 255.0) as u8,
+        start_b.round().clamp(0.0, 255.0) as u8,
+        start_a.round().clamp(0.0, 255.0) as u8,
+    );
+    let ec = (
+        end_r.round().clamp(0.0, 255.0) as u8,
+        end_g.round().clamp(0.0, 255.0) as u8,
+        end_b.round().clamp(0.0, 255.0) as u8,
+        end_a.round().clamp(0.0, 255.0) as u8,
+    );
+
+    // Reject degenerate gradients: start ≈ end color (no visible gradient).
+    let color_dist = ((sc.0 as f64 - ec.0 as f64).powi(2)
+        + (sc.1 as f64 - ec.1 as f64).powi(2)
+        + (sc.2 as f64 - ec.2 as f64).powi(2)
+        + (sc.3 as f64 - ec.3 as f64).powi(2))
+    .sqrt();
+    if color_dist < 10.0 {
+        return None;
+    }
 
     Some(LinearGradient {
         x1: cx + t_min * dx,
         y1: cy + t_min * dy,
         x2: cx + t_max * dx,
         y2: cy + t_max * dy,
-        start_color: (
-            start_r.round().clamp(0.0, 255.0) as u8,
-            start_g.round().clamp(0.0, 255.0) as u8,
-            start_b.round().clamp(0.0, 255.0) as u8,
-            start_a.round().clamp(0.0, 255.0) as u8,
-        ),
-        end_color: (
-            end_r.round().clamp(0.0, 255.0) as u8,
-            end_g.round().clamp(0.0, 255.0) as u8,
-            end_b.round().clamp(0.0, 255.0) as u8,
-            end_a.round().clamp(0.0, 255.0) as u8,
-        ),
+        start_color: sc,
+        end_color: ec,
         error,
     })
 }
@@ -240,22 +302,35 @@ pub fn detect_radial_gradient(image_data: &ImageData, mask: &[bool]) -> Option<R
 
     let error = (err_r + err_g + err_b + err_a) / 4.0;
 
+    let sc = (
+        start_r.round().clamp(0.0, 255.0) as u8,
+        start_g.round().clamp(0.0, 255.0) as u8,
+        start_b.round().clamp(0.0, 255.0) as u8,
+        start_a.round().clamp(0.0, 255.0) as u8,
+    );
+    let ec = (
+        end_r.round().clamp(0.0, 255.0) as u8,
+        end_g.round().clamp(0.0, 255.0) as u8,
+        end_b.round().clamp(0.0, 255.0) as u8,
+        end_a.round().clamp(0.0, 255.0) as u8,
+    );
+
+    // Reject degenerate radial gradients: start ≈ end color.
+    let color_dist = ((sc.0 as f64 - ec.0 as f64).powi(2)
+        + (sc.1 as f64 - ec.1 as f64).powi(2)
+        + (sc.2 as f64 - ec.2 as f64).powi(2)
+        + (sc.3 as f64 - ec.3 as f64).powi(2))
+    .sqrt();
+    if color_dist < 10.0 {
+        return None;
+    }
+
     Some(RadialGradient {
         cx,
         cy,
         r: d_max,
-        start_color: (
-            start_r.round().clamp(0.0, 255.0) as u8,
-            start_g.round().clamp(0.0, 255.0) as u8,
-            start_b.round().clamp(0.0, 255.0) as u8,
-            start_a.round().clamp(0.0, 255.0) as u8,
-        ),
-        end_color: (
-            end_r.round().clamp(0.0, 255.0) as u8,
-            end_g.round().clamp(0.0, 255.0) as u8,
-            end_b.round().clamp(0.0, 255.0) as u8,
-            end_a.round().clamp(0.0, 255.0) as u8,
-        ),
+        start_color: sc,
+        end_color: ec,
         error,
     })
 }
