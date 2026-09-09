@@ -38,23 +38,188 @@ pub struct RadialGradient {
     pub error: f64,
 }
 
-/// Try to detect a gradient in the masked region of the image.
-/// Returns `None` if no smooth gradient pattern is found.
+/// Detect a gradient in the largest connected component of `mask`. When the
+/// mask spans multiple disjoint regions (e.g. the same quantized color appears
+/// in both halves of a split gradient image), fitting over the union
+/// conflates the gradients and produces a meaningless fit. Restricting to the
+/// largest connected component gives a clean single-region fit.
 pub fn detect_gradient(
     image_data: &ImageData,
     mask: &[bool],
     error_threshold: f64,
 ) -> Option<DetectedGradient> {
-    let linear = detect_linear_gradient(image_data, mask)?;
-    let radial = detect_radial_gradient(image_data, mask)?;
-
-    if linear.error < radial.error && linear.error < error_threshold {
-        Some(DetectedGradient::Linear(linear))
-    } else if radial.error < error_threshold {
-        Some(DetectedGradient::Radial(radial))
+    let w = image_data.width as usize;
+    let h = image_data.height as usize;
+    let component = largest_connected_component(mask, w, h);
+    let m = if component.iter().any(|&b| b) {
+        &component[..]
     } else {
-        None
+        mask
+    };
+    let linear = detect_linear_gradient(image_data, m);
+    let radial = detect_radial_gradient(image_data, m);
+
+    match (linear, radial) {
+        (Some(l), Some(r)) => {
+            if l.error < r.error && l.error < error_threshold {
+                Some(DetectedGradient::Linear(l))
+            } else if r.error < error_threshold {
+                Some(DetectedGradient::Radial(r))
+            } else {
+                None
+            }
+        }
+        (Some(l), None) => {
+            if l.error < error_threshold {
+                Some(DetectedGradient::Linear(l))
+            } else {
+                None
+            }
+        }
+        (None, Some(r)) => {
+            if r.error < error_threshold {
+                Some(DetectedGradient::Radial(r))
+            } else {
+                None
+            }
+        }
+        (None, None) => None,
     }
+}
+
+/// 4-connected flood fill labeling. Returns the mask of the largest connected
+/// component (true = part of the largest component). Empty when the input mask
+/// is empty.
+fn largest_connected_component(mask: &[bool], w: usize, h: usize) -> Vec<bool> {
+    if mask.is_empty() || w == 0 || h == 0 {
+        return Vec::new();
+    }
+    let mut labels = vec![0u32; w * h];
+    let mut best_label = 0u32;
+    let mut best_size = 0usize;
+    let mut next_label = 1u32;
+    let mut stack: Vec<usize> = Vec::new();
+
+    for start in 0..w * h {
+        if !mask[start] || labels[start] != 0 {
+            continue;
+        }
+        let label = next_label;
+        next_label += 1;
+        let mut size = 0usize;
+        stack.clear();
+        stack.push(start);
+        labels[start] = label;
+        while let Some(i) = stack.pop() {
+            size += 1;
+            let x = i % w;
+            let y = i / w;
+            if x > 0 {
+                let n = i - 1;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    stack.push(n);
+                }
+            }
+            if x + 1 < w {
+                let n = i + 1;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    stack.push(n);
+                }
+            }
+            if y > 0 {
+                let n = i - w;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    stack.push(n);
+                }
+            }
+            if y + 1 < h {
+                let n = i + w;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    stack.push(n);
+                }
+            }
+        }
+        if size > best_size {
+            best_size = size;
+            best_label = label;
+        }
+    }
+
+    if best_label == 0 {
+        return vec![false; w * h];
+    }
+    mask.iter()
+        .zip(labels.iter())
+        .map(|(&m, &l)| m && l == best_label)
+        .collect()
+}
+
+/// Label all 4-connected components in `mask`. Returns a vector of component
+/// masks, one per connected component, in arbitrary order. Each mask has the
+/// same length as `mask` (w*h). Empty input → empty output.
+pub fn connected_components(mask: &[bool], w: usize, h: usize) -> Vec<Vec<bool>> {
+    if mask.is_empty() || w == 0 || h == 0 {
+        return Vec::new();
+    }
+    let mut labels = vec![0u32; w * h];
+    let mut next_label = 1u32;
+    let mut stack: Vec<usize> = Vec::new();
+    let mut components: Vec<Vec<bool>> = Vec::new();
+
+    for start in 0..w * h {
+        if !mask[start] || labels[start] != 0 {
+            continue;
+        }
+        let label = next_label;
+        next_label += 1;
+        let idx = components.len();
+        components.push(vec![false; w * h]);
+        stack.clear();
+        stack.push(start);
+        labels[start] = label;
+        components[idx][start] = true;
+        while let Some(i) = stack.pop() {
+            let x = i % w;
+            let y = i / w;
+            if x > 0 {
+                let n = i - 1;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    components[idx][n] = true;
+                    stack.push(n);
+                }
+            }
+            if x + 1 < w {
+                let n = i + 1;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    components[idx][n] = true;
+                    stack.push(n);
+                }
+            }
+            if y > 0 {
+                let n = i - w;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    components[idx][n] = true;
+                    stack.push(n);
+                }
+            }
+            if y + 1 < h {
+                let n = i + w;
+                if mask[n] && labels[n] == 0 {
+                    labels[n] = label;
+                    components[idx][n] = true;
+                    stack.push(n);
+                }
+            }
+        }
+    }
+    components
 }
 
 /// Detect a linear gradient by finding the principal direction of color
@@ -103,70 +268,29 @@ pub fn detect_linear_gradient(image_data: &ImageData, mask: &[bool]) -> Option<L
     let cx = mean(&xs);
     let cy = mean(&ys);
 
-    // Bounding box for aspect-ratio check and endpoint extension.
-    let bx_min = xs.iter().copied().fold(f64::INFINITY, f64::min);
-    let bx_max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let by_min = ys.iter().copied().fold(f64::INFINITY, f64::min);
-    let by_max = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let bw = bx_max - bx_min;
-    let bh = by_max - by_min;
-
-    // Mean color for color-deviation weighting.
-    let mr = colors.iter().map(|c| c.r as f64).sum::<f64>() / colors.len() as f64;
-    let mg = colors.iter().map(|c| c.g as f64).sum::<f64>() / colors.len() as f64;
-    let mb = colors.iter().map(|c| c.b as f64).sum::<f64>() / colors.len() as f64;
-
     // --- Candidate directions ---
-    // Try: PCA (color-deviation weighted), horizontal, vertical. Pick the
-    // direction with the best linear fit (lowest MSE). The PCA weight is the
-    // per-pixel color deviation from the mean color, so the principal
-    // direction aligns with the direction of greatest color change — not the
-    // spatial extent (which luminance weighting conflates for thin strips).
-    let mut candidates: Vec<(f64, f64)> = Vec::with_capacity(3);
+    // Try axis-aligned + 45° diagonals. PCA is unreliable for thin strips
+    // (spatial extent dominates even with color weighting), so we rely on
+    // direct fit-error comparison across fixed directions. This correctly
+    // picks horizontal for a horizontal gradient in a tall thin strip, etc.
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let candidates: [(f64, f64); 4] = [
+        (1.0, 0.0),                       // horizontal
+        (0.0, 1.0),                       // vertical
+        (s, s),                           // 45° diagonal
+        (s, -s),                          // 135° diagonal
+    ];
 
-    // PCA direction (color-deviation weighted).
-    let mut cov_xx = 0.0;
-    let mut cov_yy = 0.0;
-    let mut cov_xy = 0.0;
-    for i in 0..xs.len() {
-        let dx = xs[i] - cx;
-        let dy = ys[i] - cy;
-        let dr = colors[i].r as f64 - mr;
-        let dg = colors[i].g as f64 - mg;
-        let db = colors[i].b as f64 - mb;
-        let w_ = (dr * dr + dg * dg + db * db).max(1e-6);
-        cov_xx += dx * dx * w_;
-        cov_yy += dy * dy * w_;
-        cov_xy += dx * dy * w_;
-    }
-    let trace = cov_xx + cov_yy;
-    let det = cov_xx * cov_yy - cov_xy * cov_xy;
-    let discriminant = (trace * trace - 4.0 * det).max(0.0);
-    let lambda1 = (trace + discriminant.sqrt()) / 2.0;
-    let pca_dir = if cov_xy.abs() < 1e-6 {
-        if cov_xx >= cov_yy { (1.0, 0.0) } else { (0.0, 1.0) }
-    } else {
-        let v = (lambda1 - cov_yy) / cov_xy;
-        let len = (v * v + 1.0).sqrt();
-        (v / len, 1.0 / len)
-    };
-    candidates.push(pca_dir);
-    // Axis-aligned directions (reliable for thin strips where PCA is unstable).
-    candidates.push((1.0, 0.0));
-    candidates.push((0.0, 1.0));
-
-    let mut best: Option<(f64, f64, f64, f64, LinearGradient)> = None;
+    let mut best: Option<LinearGradient> = None;
     for &(dx, dy) in &candidates {
-        let grad = fit_linear_in_direction(&xs, &ys, &colors, cx, cy, dx, dy, bx_min, by_min, bw, bh);
-        if let Some(g) = grad {
-            let score = g.error;
-            if best.as_ref().map_or(true, |b| score < b.0) {
-                best = Some((dx, dy, score, 0.0, g));
+        if let Some(g) = fit_linear_in_direction(&xs, &ys, &colors, cx, cy, dx, dy) {
+            if best.as_ref().map_or(true, |b| g.error < b.error) {
+                best = Some(g);
             }
         }
     }
 
-    best.map(|(_, _, _, _, g)| g)
+    best
 }
 
 /// Fit a linear gradient along a fixed direction `(dx, dy)` and return the
@@ -179,10 +303,6 @@ fn fit_linear_in_direction(
     cy: f64,
     dx: f64,
     dy: f64,
-    _bx_min: f64,
-    _by_min: f64,
-    _bw: f64,
-    _bh: f64,
 ) -> Option<LinearGradient> {
     // Project all points onto the direction.
     let mut projections: Vec<f64> = xs
@@ -342,10 +462,6 @@ fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
 
-fn luminance(c: &RGBA8) -> f64 {
-    0.299 * c.r as f64 + 0.587 * c.g as f64 + 0.114 * c.b as f64
-}
-
 /// Fit `y = start + t * (end - start)` (i.e. `y = a + b*t`) and return
 /// `(start, end, mean_squared_error)`.
 fn fit_line<F>(t: &[f64], y: &[RGBA8], extractor: F) -> (f64, f64, f64)
@@ -488,5 +604,141 @@ mod tests {
         let mask = vec![true, true, true];
         let grad = detect_linear_gradient(&img, &mask);
         assert!(grad.is_none(), "Region too small for reliable detection");
+    }
+
+    #[test]
+    fn test_detect_linear_gradient_vertical() {
+        // Vertical gradient: color varies along Y, not X.
+        let mut pixels = Vec::new();
+        for y in 0..10u32 {
+            for _x in 0..20u32 {
+                let t = y as f64 / 9.0;
+                let r = (t * 255.0) as u8;
+                let g = ((1.0 - t) * 255.0) as u8;
+                pixels.push(RGBA8::new(r, g, 128, 255));
+            }
+        }
+        let img = ImageData { width: 20, height: 10, pixels };
+        let mask = full_mask(20, 10);
+        let grad = detect_linear_gradient(&img, &mask);
+        assert!(grad.is_some(), "Should detect vertical gradient");
+        let g = grad.unwrap();
+        // Direction should be vertical: x1 ≈ x2, y1 ≠ y2
+        assert!((g.x1 - g.x2).abs() < 1.0, "Vertical gradient should have x1≈x2, got x1={} x2={}", g.x1, g.x2);
+        assert!((g.y1 - g.y2).abs() > 5.0, "Vertical gradient should have y1≠y2, got y1={} y2={}", g.y1, g.y2);
+    }
+
+    #[test]
+    fn test_detect_linear_gradient_thin_vertical_strip() {
+        // Horizontal gradient in a tall thin vertical strip — the case that
+        // broke PCA-based detection. The strip is 4px wide, 40px tall, with
+        // color varying left→right.
+        let mut pixels = Vec::new();
+        for _y in 0..40u32 {
+            for x in 0..4u32 {
+                let t = x as f64 / 3.0;
+                let r = (t * 255.0) as u8;
+                let g = ((1.0 - t) * 255.0) as u8;
+                pixels.push(RGBA8::new(r, g, 128, 255));
+            }
+        }
+        let img = ImageData { width: 4, height: 40, pixels };
+        let mask = full_mask(4, 40);
+        let grad = detect_linear_gradient(&img, &mask);
+        assert!(grad.is_some(), "Should detect gradient in thin strip");
+        let g = grad.unwrap();
+        // Direction should be horizontal (x1 ≠ x2), NOT vertical.
+        assert!((g.x1 - g.x2).abs() > 1.0, "Thin strip gradient should be horizontal (x1≠x2), got x1={} x2={}", g.x1, g.x2);
+    }
+
+    #[test]
+    fn test_detect_gradient_rejects_degenerate() {
+        // Near-uniform color with tiny variation — should not produce a
+        // degenerate gradient (start ≈ end color).
+        let pixels: Vec<RGBA8> = (0..200).map(|i| {
+            let v = 128 + (i % 3) as u8;
+            RGBA8::new(v, v, v, 255)
+        }).collect();
+        let img = ImageData { width: 20, height: 10, pixels };
+        let mask = full_mask(20, 10);
+        let grad = detect_gradient(&img, &mask, 50.0);
+        assert!(grad.is_none(), "Near-uniform region should not produce a gradient");
+    }
+
+    #[test]
+    fn test_connected_components_separates_disjoint() {
+        // Two disjoint blocks in a 10x10 mask.
+        let mut mask = vec![false; 100];
+        // Top-left 3x3 block
+        for y in 0..3 {
+            for x in 0..3 {
+                mask[y * 10 + x] = true;
+            }
+        }
+        // Bottom-right 3x3 block
+        for y in 7..10 {
+            for x in 7..10 {
+                mask[y * 10 + x] = true;
+            }
+        }
+        let comps = connected_components(&mask, 10, 10);
+        assert_eq!(comps.len(), 2, "Should find 2 connected components");
+        // Each component should have 9 pixels
+        for comp in &comps {
+            assert_eq!(comp.iter().filter(|&&b| b).count(), 9);
+        }
+    }
+
+    #[test]
+    fn test_connected_components_single_block() {
+        let mut mask = vec![false; 100];
+        for y in 0..10 {
+            for x in 0..10 {
+                mask[y * 10 + x] = true;
+            }
+        }
+        let comps = connected_components(&mask, 10, 10);
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].iter().filter(|&&b| b).count(), 100);
+    }
+
+    #[test]
+    fn test_detect_gradient_per_component() {
+        // Two disjoint regions with different gradient directions: top half
+        // horizontal, bottom half vertical, separated by a 2px gap row.
+        let mut pixels = Vec::new();
+        let mut mask = vec![false; 20 * 20];
+        for y in 0..20u32 {
+            for x in 0..20u32 {
+                if y < 9 {
+                    // Horizontal gradient in top half
+                    let t = x as f64 / 19.0;
+                    let r = (t * 255.0) as u8;
+                    let g = ((1.0 - t) * 255.0) as u8;
+                    pixels.push(RGBA8::new(r, g, 128, 255));
+                    mask[(y * 20 + x) as usize] = true;
+                } else if y > 11 {
+                    // Vertical gradient in bottom half
+                    let t = (y - 12) as f64 / 7.0;
+                    let r = (t * 255.0) as u8;
+                    let b = ((1.0 - t) * 255.0) as u8;
+                    pixels.push(RGBA8::new(r, 128, b, 255));
+                    mask[(y * 20 + x) as usize] = true;
+                } else {
+                    // Gap row (not in mask)
+                    pixels.push(RGBA8::new(0, 0, 0, 255));
+                }
+            }
+        }
+        let img = ImageData { width: 20, height: 20, pixels };
+        let grad = detect_gradient(&img, &mask, 100.0);
+        assert!(grad.is_some(), "Should detect a gradient in the largest component");
+        // The largest component is one half; the gradient should be axis-aligned.
+        if let Some(DetectedGradient::Linear(g)) = &grad {
+            let dx = (g.x2 - g.x1).abs();
+            let dy = (g.y2 - g.y1).abs();
+            let is_axis_aligned = (dx > 5.0 && dy < 1.0) || (dy > 5.0 && dx < 1.0);
+            assert!(is_axis_aligned, "Gradient should be axis-aligned, got dx={} dy={}", dx, dy);
+        }
     }
 }

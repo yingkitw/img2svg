@@ -399,8 +399,13 @@ pub fn vectorize_enhanced(
         ),
     );
 
-    // For each color: build binary mask → [optional gradient detection] → marching squares
-    // → smooth → simplify → Bézier fit
+    // For each color: build binary mask → label connected components →
+    // [optional gradient detection per component] → marching squares per component
+    // → smooth → simplify → Bézier fit.
+    // Detecting gradients per connected component (not per color) ensures that
+    // when the same quantized color appears in disjoint regions with different
+    // underlying gradients (e.g. top half horizontal, bottom half vertical),
+    // each region gets its own correct gradient fit.
     // Collect (display_color, pixel_count, mask, contours, gradient) tuples for parallel processing
     let color_contours: Vec<(
         (u8, u8, u8, u8),
@@ -411,32 +416,47 @@ pub fn vectorize_enhanced(
     )> = color_list
         .iter()
         .filter(|(color, _)| *color != bg_quantized)
-        .map(|(color, pixels)| {
+        .flat_map(|(color, pixels)| {
             let mut mask = vec![false; pixel_count];
             for &(x, y) in pixels {
                 mask[y * width + x] = true;
             }
-            // Optional gradient detection against the ORIGINAL image: quantized
-            // regions are flat, so the smooth variation only exists pre-quantization.
-            let gradient = if options.detect_gradients {
-                crate::gradient_detector::detect_gradient(
-                    image_data,
-                    &mask,
-                    options.gradient_error_threshold,
-                )
-                .map(|g| extend_gradient_endpoints(g, width, height))
-            } else {
-                None
-            };
-            let contours = if options.subpixel_contours {
-                let field = crate::vectorizer::build_smoothed_field(&mask, width, height);
-                crate::vectorizer::marching_squares_contours_interp(&mask, &field, width, height)
-            } else {
-                marching_squares_contours(&mask, width, height)
-            };
-            // Use recolored color for display if available
             let display_color = recolor_map.get(color).copied().unwrap_or(*color);
-            (display_color, pixels.len(), mask, contours, gradient)
+            let total_pixels = pixels.len();
+
+            if !options.detect_gradients {
+                // Gradients disabled: no detection, single mask.
+                let contours = extract_contours(&mask, width, height, &options);
+                return vec![(
+                    display_color,
+                    total_pixels,
+                    mask,
+                    contours,
+                    None,
+                )];
+            }
+
+            // Gradient mode: label connected components and detect per component.
+            let components = crate::gradient_detector::connected_components(&mask, width, height);
+            if components.is_empty() {
+                let contours = extract_contours(&mask, width, height, &options);
+                return vec![(display_color, total_pixels, mask, contours, None)];
+            }
+            components
+                .into_iter()
+                .map(|comp| {
+                    let comp_pixels = comp.iter().filter(|&&b| b).count();
+                    let gradient =
+                        crate::gradient_detector::detect_gradient(
+                            image_data,
+                            &comp,
+                            options.gradient_error_threshold,
+                        )
+                        .map(|g| extend_gradient_endpoints(g, width, height));
+                    let contours = extract_contours(&comp, width, height, &options);
+                    (display_color, comp_pixels, comp, contours, gradient)
+                })
+                .collect::<Vec<_>>()
         })
         .collect();
 
@@ -894,6 +914,22 @@ fn gradient_svg_def(id: &str, g: &crate::gradient_detector::DetectedGradient) ->
     }
 }
 
+/// Extract contours from a binary mask using either sub-pixel interpolated or
+/// midpoint marching squares, based on `options.subpixel_contours`.
+fn extract_contours(
+    mask: &[bool],
+    width: usize,
+    height: usize,
+    options: &EnhancedOptions,
+) -> Vec<Vec<Point>> {
+    if options.subpixel_contours {
+        let field = crate::vectorizer::build_smoothed_field(mask, width, height);
+        crate::vectorizer::marching_squares_contours_interp(mask, &field, width, height)
+    } else {
+        marching_squares_contours(mask, width, height)
+    }
+}
+
 /// Extend a detected gradient's endpoints to cover the full image extent in
 /// the gradient direction. With `gradientUnits="userSpaceOnUse"`, this makes
 /// each quantized band render the correct *portion* of the full gradient
@@ -1025,7 +1061,7 @@ fn gradient_is_similar(
     g1: &crate::gradient_detector::DetectedGradient,
     g2: &crate::gradient_detector::DetectedGradient,
 ) -> bool {
-    use crate::gradient_detector::{DetectedGradient, LinearGradient, RadialGradient};
+    use crate::gradient_detector::DetectedGradient;
     const COLOR_TOL: f64 = 60.0; // per-channel tolerance for color matching
     const DIR_TOL: f64 = 0.85; // dot-product threshold for parallel directions
 
@@ -1246,7 +1282,6 @@ pub fn generate_enhanced_svg_to_prec<W: Write>(
         writeln!(writer, r#""/>"#)?;
         if data.group_by_color && group_open {
             writeln!(writer, "  </g>")?;
-            group_open = false;
         }
     }
 
@@ -1336,7 +1371,7 @@ mod tests {
 
     fn make_test_image(w: u32, h: u32) -> ImageData {
         let mut pixels = Vec::new();
-        for y in 0..h {
+        for _y in 0..h {
             for x in 0..w {
                 if x < w / 2 {
                     pixels.push(RGBA8::new(200, 0, 0, 255));

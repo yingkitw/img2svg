@@ -111,7 +111,7 @@ fn kmeans_refine(mut palette: Vec<RGBA8>, samples: &[RGBA8], iterations: usize) 
         // Reseed empty clusters: replace them with the worst-fit sample
         // (the sample whose nearest centroid is farthest away). This splits
         // the region that currently has the largest representational error.
-        let mut empty: Vec<usize> = (0..k).filter(|&j| counts[j] == 0).collect();
+        let empty: Vec<usize> = (0..k).filter(|&j| counts[j] == 0).collect();
         if !empty.is_empty() {
             // Order samples by descending distance to their nearest centroid.
             let mut order: Vec<usize> = (0..samples.len()).collect();

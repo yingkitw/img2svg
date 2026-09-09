@@ -2,7 +2,7 @@
 
 **img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
-[![Tests](https://img.shields.io/badge/tests-506%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-518%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
 [![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -123,13 +123,13 @@ Converting raster images to vector format is essential for:
 |-----------|-------|
 | **Language** | Rust (edition 2024) |
 | **License** | Apache-2.0 |
-| **Latest version** | 0.1.13 |
+| **Latest version** | 0.1.15 |
 | **Supported inputs** | PNG, JPEG, GIF, BMP, ICO, TIFF, WebP, PNM, TGA, DDS, Farbfeld |
 | **Supported outputs** | SVG, EPS, PDF (single or multi-page), AI, DXF, GeoJSON, GIMP path |
 | **Default pipeline** | Cubic Bézier with edge-aware quantization |
 | **CLI binary** | `img2svg` |
 | **MCP binary** | `img2svg-mcp` |
-| **Test count** | 486 passing (`cargo test --features mcp` for the MCP binary tests) |
+| **Test count** | 518 passing (`cargo test --features mcp` for the MCP binary tests) |
 | **Performance** | ~60–70 ms for a 512×512 image (release build) |
 | **Default max dimension** | 4096 px (auto-resizes larger images) |
 
@@ -333,7 +333,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-img2svg = "0.1.13"
+img2svg = "0.1.15"
 ```
 
 ### MCP Server
@@ -582,7 +582,7 @@ img2svg uses a sophisticated multi-stage pipeline (default Bézier pipeline):
 2. **Edge Detection**: Sobel gradient for edge-aware quantization boundaries
 3. **Color Quantization**: K-means++ initialization + k-means refinement with perceptual color distance
 4. **Majority-Vote Smoothing**: Edge-aware smoothing merges thin artifacts (adaptive: 4 passes for graphics, 2 for photos)
-5. **Original Recoloring**: Each quantized region recolored with average original pixel color for richer fidelity
+5. **Original Recoloring**: Each quantized region recolored from original image pixels — `mean` (default), `median`, or `mode` via `--recolor-mode` — for richer fidelity (median/mode avoid muddy averages in flat-color graphics)
 6. **Contour Tracing**: Marching squares on per-color binary masks produces sub-pixel-accurate boundaries
 7. **Thin Stripe Fast Path**: Contours < 2px → direct SVG rectangles (preserves line patterns)
 8. **Corner-Preserving Smoothing**: Gaussian smoothing that preserves sharp corners
@@ -698,7 +698,7 @@ A: Use fewer colors (`-c 4` to `8`), enable `--preprocess` for photos, choose th
 A: Yes — img2svg is released under the Apache License 2.0, which permits commercial use, modification, and redistribution.
 
 **Q: How do I install img2svg?**
-A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.13"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release --features mcp` (produces both `img2svg` and `img2svg-mcp` binaries).
+A: Run `cargo install img2svg` for the CLI, add `img2svg = "0.1.15"` to your `Cargo.toml` for the library, or build the MCP server with `cargo build --release --features mcp` (produces both `img2svg` and `img2svg-mcp` binaries).
 
 ## License
 

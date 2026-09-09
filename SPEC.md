@@ -78,7 +78,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 1. **Load** → `image_processor::load_image` → `ImageData`
 2. **Auto-resize** → `image_processor::resize_if_needed` → Lanczos3 downscale if > `--max-size`
 3. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
-4. **[Auto] Preprocess** → LUT bilateral filter for photos (auto-detected when >1000 colors)
+4. **[Auto] Preprocess** → LUT bilateral filter for photos (auto-detected when >10000 colors)
 5. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
 6. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine (empty-cluster reseeding, alpha-aware distance) → majority-vote smoothing
 7. **Recolor** → Representative original color per quantized region (`--recolor-mode mean|median|mode`) for richer color fidelity
@@ -114,7 +114,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 486 test executions passing (206 lib + 222 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
+- ✅ 518 test executions passing (221 lib + 239 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
