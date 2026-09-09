@@ -164,24 +164,11 @@ pub fn marching_squares_contours(mask: &[bool], width: usize, height: usize) -> 
     // Edge midpoints in image coordinates: cell (cx, cy) maps to position (cx-1, cy-1)
     // in pixel space, so edge midpoints are offset by -0.5 from cell coords.
 
-    let grid_w = width + 2;
-    let grid_h = height + 2;
-
     let corner_inside = |gx: usize, gy: usize| -> bool {
         if gx == 0 || gy == 0 || gx > width || gy > height {
             return false;
         }
         mask[(gy - 1) * width + (gx - 1)]
-    };
-
-    let mut edge_visited: HashMap<(usize, usize, u8), bool> = HashMap::new();
-
-    let cell_case = |cx: usize, cy: usize| -> u8 {
-        let tl = corner_inside(cx, cy) as u8;
-        let tr = corner_inside(cx + 1, cy) as u8;
-        let br = corner_inside(cx + 1, cy + 1) as u8;
-        let bl = corner_inside(cx, cy + 1) as u8;
-        (tl << 3) | (tr << 2) | (br << 1) | bl
     };
 
     // Edge midpoints in pixel coordinates.
@@ -210,6 +197,187 @@ pub fn marching_squares_contours(mask: &[bool], width: usize, height: usize) -> 
             x: (x - 0.5).clamp(0.0, w),
             y: (y - 0.5).clamp(0.0, h),
         }
+    };
+
+    trace_contours(width, height, corner_inside, edge_point)
+}
+
+/// Interpolated (sub-pixel) marching squares.
+///
+/// Corner classification uses the binary `mask` (so contour topology is
+/// identical to [`marching_squares_contours`]), but each edge crossing is
+/// placed by linearly interpolating a continuous `field` at the two bounding
+/// corners. With a Gaussian-smoothed field (see [`build_smoothed_field`]),
+/// boundary corners carry continuous values that straddle 0.5 asymmetrically,
+/// so crossings shift off the 0.5-grid toward the more-inside side. The result
+/// is smoother, anti-aliased contours that need less post-smoothing and yield
+/// cleaner Bézier fits on diagonal/curved boundaries, with no change to which
+/// regions are traced.
+///
+/// `field` is indexed `field[gy * (width + 1) + gx]` for grid corners
+/// `gx in 0..=width`, `gy in 0..=height` (out-of-range corners read as 0.0).
+pub fn marching_squares_contours_interp(
+    mask: &[bool],
+    field: &[f64],
+    width: usize,
+    height: usize,
+) -> Vec<Vec<Point>> {
+    // Topology follows the binary mask exactly (same as the midpoint variant).
+    let corner_inside = |gx: usize, gy: usize| -> bool {
+        if gx == 0 || gy == 0 || gx > width || gy > height {
+            return false;
+        }
+        mask[(gy - 1) * width + (gx - 1)]
+    };
+    let at = |gx: usize, gy: usize| -> f64 {
+        if gx > width || gy > height {
+            return 0.0;
+        }
+        field[gy * (width + 1) + gx]
+    };
+
+    // Interpolate the edge crossing where the field crosses 0.5. For an edge
+    // bounded by corners with values v0 and v1, the crossing fraction along
+    // the edge is (0.5 - v0) / (v1 - v0), clamped to [0, 1]. When the field is
+    // consistent with the binary classification (inside corner > 0.5,
+    // outside < 0.5) this stays in range and yields sub-pixel placement; on
+    // thin/inconsistent features it clamps to the endpoint (degrades to the
+    // midpoint variant's grid behaviour).
+    let w = width as f64;
+    let h = height as f64;
+    let edge_point = move |cx: usize, cy: usize, side: u8| -> Point {
+        let (gx0, gy0, gx1, gy1, horizontal) = match side {
+            0 => (cx, cy, cx + 1, cy, true),         // top
+            1 => (cx + 1, cy, cx + 1, cy + 1, false), // right
+            2 => (cx, cy + 1, cx + 1, cy + 1, true), // bottom
+            3 => (cx, cy, cx, cy + 1, false),        // left
+            _ => unreachable!(),
+        };
+        let v0 = at(gx0, gy0);
+        let v1 = at(gx1, gy1);
+        let t = if (v1 - v0).abs() < 1e-9 {
+            0.5
+        } else {
+            ((0.5 - v0) / (v1 - v0)).clamp(0.0, 1.0)
+        };
+        let (x, y) = if horizontal {
+            (gx0 as f64 + t, gy0 as f64)
+        } else {
+            (gx0 as f64, gy0 as f64 + t)
+        };
+        Point {
+            x: (x - 0.5).clamp(0.0, w),
+            y: (y - 0.5).clamp(0.0, h),
+        }
+    };
+
+    trace_contours(width, height, corner_inside, edge_point)
+}
+
+/// Build a continuous, Gaussian-smoothed "inside-ness" field at grid corners
+/// from a binary mask, for use with [`marching_squares_contours_interp`].
+///
+/// The mask (true = 1, false = 0) is blurred with a separable Gaussian
+/// (radius 2, σ = 1.0, clamp-to-edge boundaries) to produce continuous pixel
+/// values, then sampled with bilinear interpolation at each grid corner
+/// `(gx, gy)` (`gx in 0..=width`, `gy in 0..=height`). The field is largely
+/// consistent with the binary mask (a corner whose pixel is inside and is
+/// surrounded by inside pixels stays ≈1; a corner in open outside stays ≈0),
+/// so thresholding at 0.5 reproduces the mask topology for region bodies
+/// while only thin (≤1px) features can flip — those are already removed by
+/// despeckle / the thin-stripe fast path.
+pub fn build_smoothed_field(mask: &[bool], width: usize, height: usize) -> Vec<f64> {
+    // 5-tap Gaussian kernel, σ = 1.0 (normalised).
+    const KERNEL: [f64; 5] = [0.05448868, 0.24420134, 0.40261995, 0.24420134, 0.05448868];
+
+    let n = width * height;
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut src: Vec<f64> = mask.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect();
+
+    // Separable blur: horizontal then vertical, clamp-to-edge.
+    let mut tmp = vec![0.0f64; n];
+    for y in 0..height {
+        let row = y * width;
+        for x in 0..width {
+            let mut acc = 0.0;
+            for (k, &w_) in KERNEL.iter().enumerate() {
+                let xi = (x as isize + (k as isize - 2)).clamp(0, width as isize - 1) as usize;
+                acc += w_ * src[row + xi];
+            }
+            tmp[row + x] = acc;
+        }
+    }
+    for x in 0..width {
+        for y in 0..height {
+            let mut acc = 0.0;
+            for (k, &w_) in KERNEL.iter().enumerate() {
+                let yi = (y as isize + (k as isize - 2)).clamp(0, height as isize - 1) as usize;
+                acc += w_ * tmp[yi * width + x];
+            }
+            src[y * width + x] = acc;
+        }
+    }
+
+    // Bilinear-sample the blurred pixel field at each grid corner. Corner
+    // (gx, gy) sits at pixel-space position (gx - 0.5, gy - 0.5); the four
+    // surrounding pixel centres are (gx-1, gy-1), (gx, gy-1), (gx-1, gy),
+    // (gx, gy). Out-of-range samples clamp to the nearest edge pixel.
+    let sample = |px: isize, py: isize| -> f64 {
+        let px = px.clamp(0, width as isize - 1) as usize;
+        let py = py.clamp(0, height as isize - 1) as usize;
+        src[py * width + px]
+    };
+    let gw = width + 1;
+    let gh = height + 1;
+    let mut field = vec![0.0f64; gw * gh];
+    for gy in 0..gh {
+        for gx in 0..gw {
+            // Bilinear weights at fractional pixel coord (gx-0.5, gy-0.5).
+            let fx = gx as f64 - 0.5;
+            let fy = gy as f64 - 0.5;
+            let x0 = fx.floor() as isize;
+            let y0 = fy.floor() as isize;
+            let tx = fx - x0 as f64;
+            let ty = fy - y0 as f64;
+            let v00 = sample(x0, y0);
+            let v10 = sample(x0 + 1, y0);
+            let v01 = sample(x0, y0 + 1);
+            let v11 = sample(x0 + 1, y0 + 1);
+            let top = v00 + (v10 - v00) * tx;
+            let bot = v01 + (v11 - v01) * tx;
+            field[gy * gw + gx] = top + (bot - top) * ty;
+        }
+    }
+    field
+}
+
+/// Generic marching-squares contour tracer shared by the midpoint
+/// ([`marching_squares_contours`]) and interpolated
+/// ([`marching_squares_contours_interp`]) variants. `corner_inside(gx, gy)`
+/// classifies a grid corner; `edge_point(cx, cy, side)` returns the
+/// pixel-space point where the contour crosses the given side of cell
+/// `(cx, cy)`.
+fn trace_contours<IC, EP>(
+    width: usize,
+    height: usize,
+    corner_inside: IC,
+    edge_point: EP,
+) -> Vec<Vec<Point>>
+where
+    IC: Fn(usize, usize) -> bool,
+    EP: Fn(usize, usize, u8) -> Point,
+{
+    let grid_w = width + 2;
+    let grid_h = height + 2;
+
+    let cell_case = |cx: usize, cy: usize| -> u8 {
+        let tl = corner_inside(cx, cy) as u8;
+        let tr = corner_inside(cx + 1, cy) as u8;
+        let br = corner_inside(cx + 1, cy + 1) as u8;
+        let bl = corner_inside(cx, cy + 1) as u8;
+        (tl << 3) | (tr << 2) | (br << 1) | bl
     };
 
     // For each case, the edges that form segments.
@@ -246,7 +414,7 @@ pub fn marching_squares_contours(mask: &[bool], width: usize, height: usize) -> 
         }
     };
 
-    let neighbor_cell = move |cx: usize, cy: usize, side: u8| -> Option<(usize, usize)> {
+    let neighbor_cell = |cx: usize, cy: usize, side: u8| -> Option<(usize, usize)> {
         match side {
             0 if cy > 0 => Some((cx, cy - 1)),
             1 if cx + 1 < grid_w => Some((cx + 1, cy)),
@@ -256,6 +424,7 @@ pub fn marching_squares_contours(mask: &[bool], width: usize, height: usize) -> 
         }
     };
 
+    let mut edge_visited: HashMap<(usize, usize, u8), bool> = HashMap::new();
     let mut contours = Vec::new();
 
     for cy in 0..grid_h {

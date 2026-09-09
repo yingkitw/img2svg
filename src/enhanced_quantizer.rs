@@ -10,13 +10,17 @@ use rand::RngExt;
 use rgb::RGBA8;
 
 /// Perceptual color distance squared (weighted RGB, approximates human vision).
-/// Weights: R=2, G=4, B=3 (green most sensitive).
+/// Weights: R=2, G=4, B=3 (green most sensitive). Alpha is included so that
+/// regions differing only in transparency (e.g. anti-aliased edges, soft
+/// shadows) are not collapsed together — a fully transparent pixel is very
+/// far from an opaque one regardless of RGB.
 #[inline]
 pub fn perceptual_dist_sq(a: &RGBA8, b: &RGBA8) -> i32 {
     let dr = a.r as i32 - b.r as i32;
     let dg = a.g as i32 - b.g as i32;
     let db = a.b as i32 - b.b as i32;
-    2 * dr * dr + 4 * dg * dg + 3 * db * db
+    let da = a.a as i32 - b.a as i32;
+    2 * dr * dr + 4 * dg * dg + 3 * db * db + 3 * da * da
 }
 
 /// K-means++ initialization: choose centroids with probability proportional
@@ -68,6 +72,11 @@ fn kmeans_plusplus_init(samples: &[RGBA8], k: usize) -> Vec<RGBA8> {
 }
 
 /// Refine palette using k-means iterations with perceptual distance.
+/// Empty clusters (centroids that attract no samples) are reseeded to the
+/// sample farthest from its current centroid — i.e. the largest cluster is
+/// split. This keeps all `k` palette slots productive instead of wasting them,
+/// which materially improves palette coverage for images with skew color
+/// distributions (a few dominant colors + many rare accents).
 fn kmeans_refine(mut palette: Vec<RGBA8>, samples: &[RGBA8], iterations: usize) -> Vec<RGBA8> {
     if palette.is_empty() || samples.is_empty() {
         return palette;
@@ -77,8 +86,11 @@ fn kmeans_refine(mut palette: Vec<RGBA8>, samples: &[RGBA8], iterations: usize) 
         let k = palette.len();
         let mut sums = vec![[0u64; 4]; k];
         let mut counts = vec![0u64; k];
+        // Track each sample's distance to its nearest centroid so empty
+        // clusters can be reseeded to the worst-fit sample.
+        let mut dist_sq = vec![0i32; samples.len()];
 
-        for s in samples {
+        for (i, s) in samples.iter().enumerate() {
             let mut best_idx = 0;
             let mut best_dist = i32::MAX;
             for (j, c) in palette.iter().enumerate() {
@@ -88,11 +100,40 @@ fn kmeans_refine(mut palette: Vec<RGBA8>, samples: &[RGBA8], iterations: usize) 
                     best_idx = j;
                 }
             }
+            dist_sq[i] = best_dist;
             sums[best_idx][0] += s.r as u64;
             sums[best_idx][1] += s.g as u64;
             sums[best_idx][2] += s.b as u64;
             sums[best_idx][3] += s.a as u64;
             counts[best_idx] += 1;
+        }
+
+        // Reseed empty clusters: replace them with the worst-fit sample
+        // (the sample whose nearest centroid is farthest away). This splits
+        // the region that currently has the largest representational error.
+        let mut empty: Vec<usize> = (0..k).filter(|&j| counts[j] == 0).collect();
+        if !empty.is_empty() {
+            // Order samples by descending distance to their nearest centroid.
+            let mut order: Vec<usize> = (0..samples.len()).collect();
+            order.sort_unstable_by(|&a, &b| dist_sq[b].cmp(&dist_sq[a]));
+            let mut taken = vec![false; samples.len()];
+            for &j in &empty {
+                // Pick the next worst-fit sample that is not already a centroid.
+                let pick = order.iter().copied().find(|&i| {
+                    !taken[i] && !palette.contains(&samples[i])
+                });
+                if let Some(i) = pick {
+                    taken[i] = true;
+                    palette[j] = samples[i];
+                    counts[j] = 1; // mark non-empty so the changed check sees it
+                    sums[j] = [samples[i].r as u64, samples[i].g as u64,
+                               samples[i].b as u64, samples[i].a as u64];
+                }
+            }
+            // Recompute assignments for the reseeded centroids by restarting
+            // the iteration — simplest correct approach. The next loop pass
+            // will re-assign samples to the new centroids.
+            continue;
         }
 
         let mut changed = false;
@@ -153,9 +194,11 @@ pub fn quantize_enhanced(
         .copied()
         .collect();
 
-    // K-means++ init → k-means refinement (8 iterations)
+    // K-means++ init → k-means refinement (12 iterations; empty clusters are
+    // reseeded to the worst-fit sample, so more iterations improve coverage
+    // without wasting palette slots).
     let initial_palette = kmeans_plusplus_init(&samples, num_colors);
-    let palette = kmeans_refine(initial_palette, &samples, 8);
+    let palette = kmeans_refine(initial_palette, &samples, 12);
 
     // Map each pixel to nearest palette color
     let mut indices = vec![0usize; n_pixels];
@@ -315,6 +358,20 @@ mod tests {
     }
 
     #[test]
+    fn test_perceptual_dist_alpha_aware() {
+        // Same RGB, different alpha → non-zero distance (transparency matters).
+        let opaque = RGBA8::new(50, 100, 150, 255);
+        let transparent = RGBA8::new(50, 100, 150, 0);
+        assert!(perceptual_dist_sq(&opaque, &transparent) > 0);
+        // A small alpha gap should be smaller than a large one.
+        let small_a = RGBA8::new(50, 100, 150, 250);
+        assert!(
+            perceptual_dist_sq(&opaque, &small_a) < perceptual_dist_sq(&opaque, &transparent),
+            "larger alpha gap should yield larger distance"
+        );
+    }
+
+    #[test]
     fn test_perceptual_dist_zero_for_same() {
         let a = RGBA8::new(42, 42, 42, 255);
         assert_eq!(perceptual_dist_sq(&a, &a), 0);
@@ -374,6 +431,28 @@ mod tests {
             assert_eq!(p.g, first.g);
             assert_eq!(p.b, first.b);
         }
+    }
+
+    #[test]
+    fn test_quantize_enhanced_reseeds_empty_clusters() {
+        // Skewed distribution: 99% one color, 1% a distinct accent.
+        // Without empty-cluster reseeding, k-means++ often leaves palette
+        // slots empty (stuck on the dominant color), so the accent is lost.
+        let mut pixels = vec![RGBA8::new(20, 20, 20, 255); 990];
+        for _ in 0..10 {
+            pixels.push(RGBA8::new(240, 240, 240, 255));
+        }
+        let img = ImageData {
+            width: 50,
+            height: 20,
+            pixels,
+        };
+        let (_quantized, _indices, palette) = quantize_enhanced(&img, 4);
+        // The accent (near-white) must be represented in the palette.
+        let has_light = palette
+            .iter()
+            .any(|c| c.r > 200 && c.g > 200 && c.b > 200);
+        assert!(has_light, "accent color should survive quantization: {:?}", palette);
     }
 
     #[test]

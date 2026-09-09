@@ -2,6 +2,17 @@
 
 This directory contains test images of varying complexity to validate the img2svg conversion capability.
 
+## Quality showcase gallery
+
+`output/quality_gallery.png` is a side-by-side raster-input → SVG-output showcase embedded in the top-level `README.md`. Regenerate it after pipeline changes with:
+
+```bash
+cargo build --release
+python3 examples/output/generate_gallery.py   # needs rsvg-convert + Pillow
+```
+
+The generator converts `input/{logo,lenna,icon,gradient,transparency}.png` with representative flags, renders each SVG with `rsvg-convert`, and composites a labelled gallery with Pillow.
+
 ## Test Images
 
 ### 1. [simple.png](input/simple.png) - Basic Complexity

@@ -152,6 +152,8 @@ struct ConvertToolArgs {
     min_region_area: usize,
     coordinate_precision: u32,
     detect_gradients: bool,
+    subpixel_contours: bool,
+    recolor_method: img2svg::RecolorMethod,
     preset: Option<Preset>,
     output_format: EnhancedOutputFormat,
     max_size: u32,
@@ -237,6 +239,21 @@ impl ConvertToolArgs {
                 .get("gradients")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            subpixel_contours: args
+                .get("subpixel_contours")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            recolor_method: match args
+                .get("recolor_method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("mean")
+                .to_lowercase()
+                .as_str()
+            {
+                "median" => img2svg::RecolorMethod::Median,
+                "mode" => img2svg::RecolorMethod::Mode,
+                _ => img2svg::RecolorMethod::Mean,
+            },
             preset: args
                 .get("preset")
                 .and_then(|v| v.as_str())
@@ -268,6 +285,8 @@ impl ConvertToolArgs {
             min_region_area: self.min_region_area,
             coordinate_precision: self.coordinate_precision,
             detect_gradients: self.detect_gradients,
+            subpixel_contours: self.subpixel_contours,
+            recolor_method: self.recolor_method,
             ..Default::default()
         };
         if let Some(p) = self.preset {
@@ -429,6 +448,17 @@ fn shared_convert_properties() -> Value {
             "description": "Detect smooth gradients per region and render them as native SVG gradient fills.",
             "default": false
         },
+        "subpixel_contours": {
+            "type": "boolean",
+            "description": "Use interpolated (sub-pixel) marching squares for smoother contours on diagonal/curved boundaries. Default: true.",
+            "default": true
+        },
+        "recolor_method": {
+            "type": "string",
+            "enum": ["mean", "median", "mode"],
+            "description": "How to derive each region's display color from the original pixels: mean (default), median, or mode. Median/mode avoid muddy averaged colors in flat-color graphics.",
+            "default": "mean"
+        },
         "output_format": {
             "type": "string",
             "enum": ["svg", "eps", "pdf", "ai"],
@@ -508,6 +538,8 @@ impl Img2SvgMcpServer {
                                 "min_region_area": shared["min_region_area"],
                                 "coordinate_precision": shared["coordinate_precision"],
                                 "gradients": shared["gradients"],
+                                "subpixel_contours": shared["subpixel_contours"],
+                                "recolor_method": shared["recolor_method"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
@@ -541,6 +573,8 @@ impl Img2SvgMcpServer {
                                 "min_region_area": shared["min_region_area"],
                                 "coordinate_precision": shared["coordinate_precision"],
                                 "gradients": shared["gradients"],
+                                "subpixel_contours": shared["subpixel_contours"],
+                                "recolor_method": shared["recolor_method"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
@@ -924,6 +958,8 @@ mod tests {
         assert!(props.contains_key("coordinate_precision"));
         assert!(props.contains_key("optimize_tolerance"));
         assert!(props.contains_key("gradients"));
+        assert!(props.contains_key("subpixel_contours"));
+        assert!(props.contains_key("recolor_method"));
         let required = tools[0]["inputSchema"]["required"]
             .as_array()
             .expect("required");

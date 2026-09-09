@@ -2,13 +2,29 @@
 
 **img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
-[![Tests](https://img.shields.io/badge/tests-486%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-506%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
 [![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Rust Edition](https://img.shields.io/badge/rust-edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/)
 [![MCP](https://img.shields.io/badge/MCP-server-blueviolet)](https://modelcontextprotocol.io/)
 [![Pure Rust](https://img.shields.io/badge/pure-Rust-orange)](https://www.rust-lang.org/)
+
+### Sample output
+
+Real conversions of the bundled example images (left: raster input, right: rendered SVG output). Generated with the default enhanced pipeline and the flags noted below each pair.
+
+![img2svg quality samples: raster input → SVG output for a flat-color logo, a photograph, a small icon, a smooth gradient, and a transparency image](examples/output/quality_gallery.png)
+
+| Input | Flags | SVG size |
+|-------|-------|----------|
+| `logo.png` (400×400) | `--preset logo` | 3.6 KB |
+| `lenna.png` (512×512) | `-c 16` (enhanced, 16 colors) | 69 KB |
+| `icon.png` (128×128) | `--preset icon` | 1.2 KB |
+| `gradient.png` (400×400) | `--gradients` (native SVG gradient fills) | 2.8 KB |
+| `transparency.png` (400×400) | default (alpha-aware quantization) | 1.7 KB |
+
+The SVGs scale without pixelation, stay compact, and preserve sharp corners, smooth curves, and transparency. See [`examples/`](examples/) for more inputs and per-image recommended flags.
 
 ## Table of Contents
 
@@ -80,6 +96,9 @@ Converting raster images to vector format is essential for:
 14a. **Inkscape-Style Color Layers**: `--group-by-color` wraps each fill-color group in a `<g data-img2svg-color="#hex">` element for easy editing in vector tools
 15. **Adjustable Coordinate Precision**: `--precision` (1–6 decimals) and `--quality-preset low|medium|high` trade path exactness for smaller SVG files
 15a. **Tunable Bézier Fitting**: `--curve-tolerance` controls Bézier curve strictness for the density vs. fidelity tradeoff
+15b. **Sub-pixel Contours**: interpolated marching squares (default on, `--no-subpixel-contours` to disable) places edge crossings off the 0.5-grid for smoother diagonal/curved boundaries
+15c. **Robust Palette & Recoloring**: k-means++ with empty-cluster reseeding + alpha-aware distance for better coverage; `--recolor-mode mean|median|mode` picks representative region colors (median/mode avoid muddy averages in flat-color graphics)
+15d. **Corner-aware Bézier Smoothing**: centripetal parameterization reduces overshoot; G1 continuity is enforced at smooth junctions while preserving real sharp corners
 16. **Animated GIF Support**: Converts each frame to a numbered SVG file (`output_001.svg`, `output_002.svg`, etc.)
 17. **CMYK Color Space Input**: `cmyk_to_rgb` conversion and JPEG APP14 marker detection for print workflow support
 18. **Flexible Usage**: CLI tool, Rust library, and MCP server
@@ -392,6 +411,8 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--stats` | | false | Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed time) |
 | `--gradients` | | false | Detect smooth gradients per region and render them as native SVG `<defs>` gradient fills |
 | `--group-by-color` | | false | Wrap each color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers |
+| `--no-subpixel-contours` | | false | Disable interpolated (sub-pixel) marching squares; sub-pixel contours are on by default for smoother diagonal/curved boundaries |
+| `--recolor-mode` | | `mean` | How to derive each region's display color from the original pixels: `mean` (default), `median`, or `mode`. Median/mode avoid muddy averaged colors in flat-color graphics |
 
 **Presets** (explicit flags override preset defaults):
 
@@ -529,6 +550,8 @@ The MCP server provides two tools:
   - `min_region_area` (optional, default 20), `coordinate_precision` (optional, 1–6, default 2)
   - `optimize_tolerance` (optional, default 1.5): merge tolerance for `optimize_curves`
   - `gradients` (optional, default false): native SVG gradient fills for smooth regions
+  - `subpixel_contours` (optional, default true): interpolated marching squares for smoother contours
+  - `recolor_method` (optional, default `mean`): `mean`, `median`, or `mode` for region display colors
   - `output_format` (optional): `svg`, `eps`, `pdf`, or `ai`
   - `smooth_level`, `threshold` (optional): Legacy pipeline only
   - `max_size`, `progress_token` (optional)

@@ -171,6 +171,19 @@ pub struct Cli {
     /// hierarchical layers that are easier to edit/restyle in vector tools.
     #[arg(long)]
     pub group_by_color: bool,
+
+    /// Disable interpolated (sub-pixel) marching squares and fall back to plain
+    /// midpoint contour placement. Sub-pixel contours are on by default and
+    /// produce smoother boundaries on diagonal/curved edges.
+    #[arg(long = "no-subpixel-contours")]
+    pub no_subpixel_contours: bool,
+
+    /// Method used to derive each region's display color from the original
+    /// image pixels: mean (default), median, or mode. Median/mode avoid the
+    /// muddy averaged colors mean produces when a quantized bucket spans
+    /// several distinct originals (common in flat-color logos/icons).
+    #[arg(long = "recolor-mode", default_value = "mean")]
+    pub recolor_mode: String,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq, Default)]
@@ -311,6 +324,24 @@ mod tests {
     fn enhanced_preprocess_respects_logo_preset() {
         let cli = parse_args(["img2svg", "-i", "logo.png", "--preset", "logo"]);
         assert!(!enhanced_preprocess(&cli));
+    }
+
+    #[test]
+    fn subpixel_contours_default_on_negation_flag_off() {
+        let cli = parse_args(["img2svg", "-i", "x.png"]);
+        assert!(!cli.no_subpixel_contours);
+        let cli = parse_args(["img2svg", "-i", "x.png", "--no-subpixel-contours"]);
+        assert!(cli.no_subpixel_contours);
+    }
+
+    #[test]
+    fn recolor_mode_default_and_overrides() {
+        let cli = parse_args(["img2svg", "-i", "x.png"]);
+        assert_eq!(cli.recolor_mode, "mean");
+        let cli = parse_args(["img2svg", "-i", "x.png", "--recolor-mode", "mode"]);
+        assert_eq!(cli.recolor_mode, "mode");
+        let cli = parse_args(["img2svg", "-i", "x.png", "--recolor-mode", "median"]);
+        assert_eq!(cli.recolor_mode, "median");
     }
 
     #[test]

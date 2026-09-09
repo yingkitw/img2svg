@@ -34,6 +34,8 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
    - `--stats`: Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed ms) after conversion
    - `--gradients`: Detect smooth gradients per region (against the original image) and render them as native SVG `<defs>` gradient fills
    - `--group-by-color`: Wrap each color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers (default off)
+   - `--no-subpixel-contours`: Disable interpolated (sub-pixel) marching squares; sub-pixel contours are on by default for smoother diagonal/curved boundaries
+   - `--recolor-mode`: How to derive each region's display color from the original pixels — `mean` (default), `median`, or `mode`; median/mode avoid muddy averaged colors in flat-color graphics
 
 ### MCP Tool (`convert_image_to_svg`)
 - Default pipeline: **enhanced Bézier** (matches CLI without `--original`)
@@ -45,6 +47,8 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 - `coordinate_precision` (integer, 1-6, default 2): SVG path coordinate decimals
 - `optimize_tolerance` (number, default 1.5): merge tolerance for `optimize_curves`
 - `gradients` (boolean, default false): native SVG gradient fills for smooth regions
+- `subpixel_contours` (boolean, default true): interpolated marching squares for smoother contours
+- `recolor_method` (string, default `mean`): `mean`, `median`, or `mode` for region display colors
 - `output_format`: `svg`, `eps`, `pdf`, or `ai` (default `svg`, or inferred from output path extension)
 - `smooth_level`, `threshold` (legacy only)
 - `max_size`, `progress_token`
@@ -76,14 +80,14 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 3. **[Auto] Detect** → Count unique colors, determine adaptive target (256/128/64)
 4. **[Auto] Preprocess** → LUT bilateral filter for photos (auto-detected when >1000 colors)
 5. **Edge detect** → `edge_detector::detect_edges_sobel` → Sobel gradient edge map
-6. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine → majority-vote smoothing
-7. **Recolor** → Average original pixels per quantized region for richer color fidelity
-8. **Contour** → `vectorizer::marching_squares_contours` → Per-color binary mask → sub-pixel contours
+6. **Quantize** → `enhanced_quantizer::quantize_edge_aware` → K-means++ init → k-means refine (empty-cluster reseeding, alpha-aware distance) → majority-vote smoothing
+7. **Recolor** → Representative original color per quantized region (`--recolor-mode mean|median|mode`) for richer color fidelity
+8. **Contour** → `vectorizer::marching_squares_contours` (or `marching_squares_contours_interp` with a Gaussian-smoothed field when `subpixel_contours`) → Per-color binary mask → sub-pixel contours
 9. **[Fast path]** Thin stripes (< 2px) → direct SVG rect via `svg_override`
 10. **[Parallel] Smooth** → `path_simplifier::smooth_with_corners` → Gaussian smoothing preserving corners
 11. **[Parallel] Simplify** → `path_simplifier::visvalingam_whyatt` → Area-based simplification with corner preservation
 12. **[Parallel] Snap** → Edge snapping + `inject_image_corners` + `dedup_consecutive`
-13. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with Newton-Raphson + G1 continuity
+13. **[Parallel] Fit** → `bezier_fitter::BezierFitter::fit_path` → Cubic Bézier with centripetal parameterization, Newton-Raphson, and corner-aware G1 continuity
 14. **SVG emit** → `enhanced_vectorizer::generate_enhanced_svg` → Background rect + gap-filling strokes + color grouping
 
 ### Original Pipeline (--original flag)

@@ -126,6 +126,11 @@
 - [x] `--curve-tolerance` (CLI) — Bézier fitting strictness knob (default 2.0); wired through `main.rs::enhanced_options()` → `EnhancedOptions.curve_tolerance`
 - [x] Whole-region gradient merging — `collect_gradient_defs` two-tier match: exact `DetectedGradient` equality first, then `gradient_is_similar` (same variant only). Merges adjacent regions with related gradients into a single `<defs>` entry
 - [x] `--group-by-color` (CLI) — wrap each fill-color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers (default off; streaming-preserving)
+- [x] **Generation quality pass (2026-09-09)** — four targeted improvements:
+  - K-means empty-cluster reseeding (split largest cluster on empty slots), alpha-aware perceptual distance, 12-iteration refinement in `enhanced_quantizer.rs` (better palette coverage + transparency handling)
+  - Interpolated (sub-pixel) marching squares: `marching_squares_contours_interp` + `build_smoothed_field` (Gaussian-blurred, bilinear-sampled) in `vectorizer.rs`; binary-mask topology preserved, edge crossings placed off the 0.5-grid for smoother contours. Wired as `--no-subpixel-contours` (default on) / `EnhancedOptions.subpixel_contours` / MCP `subpixel_contours`
+  - Bézier fitter: centripetal parameterization (reduces overshoot at sharp turns) + G1 continuity that respects real sharp corners (smoothes error-split junctions without rounding off corners) in `bezier_fitter.rs`
+  - Recolor methods: `RecolorMethod` enum (Mean/Median/Mode) in `enhanced_vectorizer.rs`; `--recolor-mode` CLI / `EnhancedOptions.recolor_method` / MCP `recolor_method` — median/mode avoid muddy averaged colors in flat-color graphics
 
 ## Pending 🚧
 

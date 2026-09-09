@@ -30,10 +30,10 @@ src/
 ├── tune.rs                 # HTML parameter comparison grid (--tune)
 ├── mcp.rs                  # MCP (Model Context Protocol) server
 ├── edge_detector.rs        # Sobel edge detection (enhanced pipeline)
-├── enhanced_quantizer.rs   # K-means++ / k-means refinement, edge-aware quantization (enhanced)
+├── enhanced_quantizer.rs   # K-means++ / k-means refinement (empty-cluster reseeding, alpha-aware distance), edge-aware quantization (enhanced)
 ├── region_extractor.rs     # 8-connectivity flood-fill, Moore contour tracing (enhanced)
 ├── path_simplifier.rs      # Visvalingam-Whyatt with corner preservation (enhanced)
-├── bezier_fitter.rs        # Cubic Bézier fitting with Newton-Raphson (enhanced)
+├── bezier_fitter.rs        # Cubic Bézier fitting: centripetal parameterization, Newton-Raphson, corner-aware G1 (enhanced)
 ├── enhanced_vectorizer.rs  # Enhanced pipeline orchestrator (enhanced)
 └── *_tests.rs              # Unit tests for each module
 
@@ -105,13 +105,14 @@ PNG/JPEG → load_image → ImageData
          ↓
          detect_edges_sobel → EdgeMap (Sobel gradient magnitudes)
          ↓
-         quantize_edge_aware (k-means++ init → k-means refine → majority-vote smoothing)
+         quantize_edge_aware (k-means++ init → k-means refine with empty-cluster reseeding + alpha-aware distance → majority-vote smoothing)
          ↓
-         recolor_from_original (average original pixels per quantized region)
+         recolor_from_original (mean / median / mode per quantized region; --recolor-mode)
          ↓
          group pixels by quantized color → per-color binary mask
          ↓
-         marching_squares_contours (shared with original pipeline, proven robust)
+         marching_squares_contours (midpoint, default shared with original pipeline)
+         OR marching_squares_contours_interp (sub-pixel, Gaussian-smoothed field; --no-subpixel-contours disables)
          ↓
          parallel per contour (rayon):
            thin stripe fast path (height/width < 2px → direct SVG rect via svg_override)
@@ -169,8 +170,8 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Corner-aware Bézier splitting**: 30° turn threshold detects sharp corners from marching squares chamfers
 - **Visvalingam-Whyatt simplification**: Area-based point removal with corner preservation
 - **Harris-like corner detection**: Multi-scale corner response with non-maximum suppression
-- **Cubic Bézier fitting**: Least-squares fit with Newton-Raphson reparameterization
-- **G1 continuity**: Smooth tangent transitions between adjacent Bézier curves
+- **Cubic Bézier fitting**: Least-squares fit with centripetal parameterization (reduces overshoot at sharp turns) and Newton-Raphson reparameterization
+- **G1 continuity**: Smooth tangent transitions between adjacent Bézier curves, enforced at smooth junctions while preserving real sharp corners (≥30° turn skipped)
 - **Control point clamping**: Prevents overshoot beyond data bounds (15% margin)
 - **Gap-filling strokes**: Thin stroke matching fill color eliminates visible seams
 - **Color grouping**: Consecutive same-color paths merged into compound paths
@@ -194,7 +195,7 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 ### New Features (merged from vec project)
 - **Batch directory processing**: `img2svg -i dir/ -o out/` converts all supported images
 - **Auto-resize**: Lanczos3 downscale for images exceeding `--max-size` (default 4096)
-- **Original recoloring**: Each quantized region recolored with average original pixel color
+- **Original recoloring**: Each quantized region recolored with a representative original pixel color (mean / median / mode via `--recolor-mode`)
 - **LUT bilateral filter**: Precomputed range-weight LUT with fixed-point arithmetic (radius=2)
 - **Hierarchical decomposition**: `--hierarchical` preserves hole contours with `fill-rule="evenodd"`
 - **Weighted median filter**: Gaussian-like weighting (center=4, edge=2, corner=1)

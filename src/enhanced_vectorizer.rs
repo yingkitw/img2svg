@@ -110,6 +110,24 @@ fn autotune_options(image: &ImageData, options: &EnhancedOptions) -> EnhancedOpt
     tuned
 }
 
+/// How to derive each region's display color from the original image pixels
+/// that fell into its quantized bucket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RecolorMethod {
+    /// Arithmetic mean of the original pixels (current default; smooth but can
+    /// produce muddy colors when a bucket spans several distinct originals).
+    #[default]
+    Mean,
+    /// Per-channel median of the original pixels. Robust to outliers and
+    /// anti-aliased fringe pixels, so it picks a representative "middle" color
+    /// rather than a washed-out average.
+    Median,
+    /// Most common exact original color in the bucket. Best for flat-color
+    /// graphics (logos/icons) where the true color is one of a few discrete
+    /// originals and averaging would blend it toward a neighbor.
+    Mode,
+}
+
 /// Enhanced vectorization options.
 #[derive(Debug, Clone)]
 pub struct EnhancedOptions {
@@ -133,6 +151,9 @@ pub struct EnhancedOptions {
     pub preprocess: bool,
     /// Whether to recolor from original image
     pub recolor: bool,
+    /// Method used to derive each region's display color from the original
+    /// pixels when `recolor` is enabled (default [`RecolorMethod::Mean`]).
+    pub recolor_method: RecolorMethod,
     /// Use SLIC superpixel quantization instead of k-means
     pub use_superpixel: bool,
     /// Centerline/stroke tracing for line art (open paths)
@@ -163,6 +184,11 @@ pub struct EnhancedOptions {
     /// edit/restyle in vector tools; ignores the background rect and
     /// stroke-only paths.
     pub group_by_color: bool,
+    /// Use interpolated (sub-pixel) marching squares for contour extraction.
+    /// Linearly interpolates edge-crossing positions from a coverage field,
+    /// producing smoother, anti-aliased contours that need less smoothing and
+    /// yield cleaner Bézier fits on diagonal/curved boundaries (default true).
+    pub subpixel_contours: bool,
 }
 
 impl Default for EnhancedOptions {
@@ -178,6 +204,7 @@ impl Default for EnhancedOptions {
             smooth_window: 3,
             preprocess: true,
             recolor: true,
+            recolor_method: RecolorMethod::Mean,
             use_superpixel: false,
             centerline: false,
             optimize_corners: false,
@@ -190,6 +217,7 @@ impl Default for EnhancedOptions {
             detect_gradients: false,
             gradient_error_threshold: 50.0,
             group_by_color: false,
+            subpixel_contours: true,
         }
     }
 }
@@ -318,32 +346,20 @@ pub fn vectorize_enhanced(
         }
     }
 
-    // Build a mapping from quantized color → average original color for display
+    // Build a mapping from quantized color → representative original color for
+    // display, using the configured recolor method (mean/median/mode).
     let recolor_map: HashMap<(u8, u8, u8, u8), (u8, u8, u8, u8)> =
         if options.recolor && is_many_colors {
             let mut map = HashMap::new();
             for (&qcolor, pixels) in &color_pixels {
-                let mut sr: u64 = 0;
-                let mut sg: u64 = 0;
-                let mut sb: u64 = 0;
-                let mut sa: u64 = 0;
-                for &(x, y) in pixels {
-                    let p = image_data.pixels[y * width + x];
-                    sr += p.r as u64;
-                    sg += p.g as u64;
-                    sb += p.b as u64;
-                    sa += p.a as u64;
-                }
-                let n = pixels.len() as u64;
-                map.insert(
-                    qcolor,
-                    (
-                        (sr / n) as u8,
-                        (sg / n) as u8,
-                        (sb / n) as u8,
-                        (sa / n) as u8,
-                    ),
-                );
+                let orig: Vec<(u8, u8, u8, u8)> = pixels
+                    .iter()
+                    .map(|&(x, y)| {
+                        let p = image_data.pixels[y * width + x];
+                        (p.r, p.g, p.b, p.a)
+                    })
+                    .collect();
+                map.insert(qcolor, recolor_color(&orig, options.recolor_method));
             }
             map
         } else {
@@ -411,7 +427,12 @@ pub fn vectorize_enhanced(
             } else {
                 None
             };
-            let contours = marching_squares_contours(&mask, width, height);
+            let contours = if options.subpixel_contours {
+                let field = crate::vectorizer::build_smoothed_field(&mask, width, height);
+                crate::vectorizer::marching_squares_contours_interp(&mask, &field, width, height)
+            } else {
+                marching_squares_contours(&mask, width, height)
+            };
             // Use recolored color for display if available
             let display_color = recolor_map.get(color).copied().unwrap_or(*color);
             (display_color, pixels.len(), mask, contours, gradient)
@@ -542,7 +563,12 @@ pub fn vectorize_enhanced(
 
                 if options.logo_mode {
                     let ring = crate::logo_pipeline::outline_mask(&mask, width, height);
-                    let outline_contours = marching_squares_contours(&ring, width, height);
+                    let outline_contours = if options.subpixel_contours {
+                        let field = crate::vectorizer::build_smoothed_field(&ring, width, height);
+                        crate::vectorizer::marching_squares_contours_interp(&ring, &field, width, height)
+                    } else {
+                        marching_squares_contours(&ring, width, height)
+                    };
                     let ocolor = crate::logo_pipeline::outline_color(*color);
                     for outline in outline_contours {
                         if outline.len() < 3 {
@@ -638,6 +664,60 @@ fn vectorize_centerline(
         paths,
         group_by_color: false,
     })
+}
+
+/// Compute the representative display color for a set of original pixels
+/// using the chosen recolor method.
+fn recolor_color(pixels: &[(u8, u8, u8, u8)], method: RecolorMethod) -> (u8, u8, u8, u8) {
+    if pixels.is_empty() {
+        return (0, 0, 0, 0);
+    }
+    match method {
+        RecolorMethod::Mean => {
+            let mut sr: u64 = 0;
+            let mut sg: u64 = 0;
+            let mut sb: u64 = 0;
+            let mut sa: u64 = 0;
+            for &(r, g, b, a) in pixels {
+                sr += r as u64;
+                sg += g as u64;
+                sb += b as u64;
+                sa += a as u64;
+            }
+            let n = pixels.len() as u64;
+            ((sr / n) as u8, (sg / n) as u8, (sb / n) as u8, (sa / n) as u8)
+        }
+        RecolorMethod::Median => {
+            // Per-channel median. Cloning into separate Vecs is O(n) per
+            // channel; regions are typically small so this is acceptable.
+            let mut rs: Vec<u8> = pixels.iter().map(|p| p.0).collect();
+            let mut gs: Vec<u8> = pixels.iter().map(|p| p.1).collect();
+            let mut bs: Vec<u8> = pixels.iter().map(|p| p.2).collect();
+            let mut as_: Vec<u8> = pixels.iter().map(|p| p.3).collect();
+            rs.sort_unstable();
+            gs.sort_unstable();
+            bs.sort_unstable();
+            as_.sort_unstable();
+            let mid = pixels.len() / 2;
+            (rs[mid], gs[mid], bs[mid], as_[mid])
+        }
+        RecolorMethod::Mode => {
+            // Most frequent exact color (ties broken by first occurrence).
+            use std::collections::HashMap;
+            let mut counts: HashMap<(u8, u8, u8, u8), usize> = HashMap::new();
+            let mut best = pixels[0];
+            let mut best_count = 0usize;
+            for &c in pixels {
+                let n = counts.entry(c).or_insert(0);
+                *n += 1;
+                if *n > best_count {
+                    best_count = *n;
+                    best = c;
+                }
+            }
+            best
+        }
+    }
 }
 
 /// Remove consecutive near-duplicate points (distance < threshold).
@@ -1346,6 +1426,36 @@ mod tests {
         let svg_yes = generate_enhanced_svg(&result_yes);
         assert!(svg_no.contains("<path"));
         assert!(svg_yes.contains("<path"));
+    }
+
+    #[test]
+    fn test_recolor_color_methods() {
+        // A bucket spanning two distinct originals: mean blends them, median
+        // picks a middle channel value, mode picks the most frequent one.
+        let pixels = vec![
+            (200, 200, 200, 255),
+            (200, 200, 200, 255),
+            (200, 200, 200, 255),
+            (100, 100, 100, 255),
+        ];
+        let mean = recolor_color(&pixels, RecolorMethod::Mean);
+        let median = recolor_color(&pixels, RecolorMethod::Median);
+        let mode = recolor_color(&pixels, RecolorMethod::Mode);
+        // Mean: (200*3 + 100)/4 = 175.
+        assert_eq!(mean, (175, 175, 175, 255));
+        // Median of [100,200,200,200] (sorted) → index 2 = 200.
+        assert_eq!(median, (200, 200, 200, 255));
+        // Mode: 200 appears 3×, 100 appears 1×.
+        assert_eq!(mode, (200, 200, 200, 255));
+        // Mean must differ from mode here (proving the methods diverge).
+        assert_ne!(mean, mode);
+    }
+
+    #[test]
+    fn test_recolor_color_empty() {
+        assert_eq!(recolor_color(&[], RecolorMethod::Mean), (0, 0, 0, 0));
+        assert_eq!(recolor_color(&[], RecolorMethod::Median), (0, 0, 0, 0));
+        assert_eq!(recolor_color(&[], RecolorMethod::Mode), (0, 0, 0, 0));
     }
 
     #[test]

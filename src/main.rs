@@ -60,6 +60,12 @@ fn enhanced_options(cli: &Cli) -> EnhancedOptions {
         detect_gradients: cli.gradients,
         curve_tolerance: cli.curve_tolerance,
         group_by_color: cli.group_by_color,
+        subpixel_contours: !cli.no_subpixel_contours,
+        recolor_method: match cli.recolor_mode.to_lowercase().as_str() {
+            "median" => enhanced_vectorizer::RecolorMethod::Median,
+            "mode" => enhanced_vectorizer::RecolorMethod::Mode,
+            _ => enhanced_vectorizer::RecolorMethod::Mean,
+        },
         ..Default::default()
     }
 }

@@ -425,6 +425,69 @@ use rgb::RGBA8;
         assert!(contours.len() > 0);
     }
 
+    #[test]
+    fn test_build_smoothed_field_range_and_consistency() {
+        // All-true mask: a Gaussian blur of all ones is all ones, so every
+        // corner field value must be ≈ 1.0.
+        let mask = vec![true; 64];
+        let field = build_smoothed_field(&mask, 8, 8);
+        assert_eq!(field.len(), 9 * 9);
+        for &v in &field {
+            assert!((v - 1.0).abs() < 1e-6, "all-true field should be 1.0, got {}", v);
+        }
+        // All-false mask: every corner ≈ 0.0.
+        let mask0 = vec![false; 64];
+        let field0 = build_smoothed_field(&mask0, 8, 8);
+        for &v in &field0 {
+            assert!(v.abs() < 1e-6, "all-false field should be 0.0, got {}", v);
+        }
+        // A half-filled mask (left half true) must produce continuous values
+        // straddling 0.5 near the vertical boundary — i.e. some value strictly
+        // between 0 and 1, proving the field is not just {0, 0.5, 1}.
+        let mut half = vec![false; 64];
+        for y in 0..8 {
+            for x in 0..4 {
+                half[y * 8 + x] = true;
+            }
+        }
+        let fh = build_smoothed_field(&half, 8, 8);
+        let any_continuous = fh.iter().any(|&v| v > 0.05 && v < 0.95 && (v - 0.5).abs() > 0.02);
+        assert!(any_continuous, "expected continuous (non-0/0.5/1) field values");
+    }
+
+    #[test]
+    fn test_interp_contours_preserve_topology_for_square() {
+        // An axis-aligned square: binary classification is unchanged, so the
+        // interpolated variant must produce the same number of contours and
+        // the same number of points per contour as the midpoint variant.
+        let mask = create_test_mask(20, 20, "square");
+        let mid = marching_squares_contours(&mask, 20, 20);
+        let field = build_smoothed_field(&mask, 20, 20);
+        let interp = marching_squares_contours_interp(&mask, &field, 20, 20);
+        assert_eq!(mid.len(), interp.len());
+        for (m, i) in mid.iter().zip(interp.iter()) {
+            assert_eq!(m.len(), i.len(), "contour point counts differ");
+        }
+    }
+
+    #[test]
+    fn test_interp_contours_smooth_for_circle() {
+        // A circle has diagonal boundaries where the smoothed field shifts
+        // crossings off the 0.5-grid, producing sub-pixel points.
+        let mask = create_test_mask(40, 40, "circle");
+        let field = build_smoothed_field(&mask, 40, 40);
+        let interp = marching_squares_contours_interp(&mask, &field, 40, 40);
+        assert!(!interp.is_empty());
+        // At least one interpolated point must be off the half-integer grid
+        // (plain marching squares only emits .0/.5 coordinates).
+        let any_subpixel = interp.iter().flatten().any(|p| {
+            let fx = (p.x * 2.0).round() - p.x * 2.0;
+            let fy = (p.y * 2.0).round() - p.y * 2.0;
+            fx.abs() > 1e-3 || fy.abs() > 1e-3
+        });
+        assert!(any_subpixel, "expected at least one sub-pixel contour point");
+    }
+
     // === Vectorize Tests ===
 
     #[test]

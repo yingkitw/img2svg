@@ -73,8 +73,10 @@ impl BezierFitter {
             }
         }
 
-        // Enforce G1 continuity between adjacent curves (only for smooth joins)
-        if curves.len() > 1 && corner_indices.is_empty() {
+        // Enforce G1 continuity between adjacent curves at smooth junctions.
+        // Sharp-corner junctions are preserved internally by the function, so
+        // this is safe to run even when the path contains real corners.
+        if curves.len() > 1 {
             self.enforce_g1_continuity(&mut curves);
         }
 
@@ -387,12 +389,21 @@ impl BezierFitter {
     }
 
     fn chord_length_parameterize(&self, points: &[Point]) -> Vec<f64> {
+        // Centripetal parameterization (α = 0.5): accumulate the square root of
+        // the segment length rather than the length itself. Compared with
+        // uniform chord-length parameterization this gives parameter values
+        // that are more proportional to the curve's actual arc length near
+        // sharp turns, which materially reduces Bézier overshoot and
+        // self-intersection at corners (Lee 1989). The downstream Newton-Raphson
+        // reparameterization refines these further.
         let n = points.len();
         let mut t = vec![0.0; n];
         for i in 1..n {
             let dx = points[i].x - points[i - 1].x;
             let dy = points[i].y - points[i - 1].y;
-            t[i] = t[i - 1] + (dx * dx + dy * dy).sqrt();
+            let seg = (dx * dx + dy * dy).sqrt();
+            // sqrt(seg) → centripetal; guard against zero-length segments.
+            t[i] = t[i - 1] + seg.sqrt();
         }
         let total = t[n - 1];
         if total > 0.0 {
@@ -503,8 +514,17 @@ impl BezierFitter {
         }
     }
 
-    /// Enforce G1 continuity between adjacent curves.
+    /// Enforce G1 continuity between adjacent curves, but skip junctions that
+    /// are genuine sharp corners. At a sharp corner the incoming and outgoing
+    /// tangents are meant to differ, so aligning them would round off the
+    /// corner. A junction counts as a corner when the turn between the
+    /// incoming tangent (end→control2 of curve i) and the outgoing tangent
+    /// (start→control1 of curve i+1) exceeds ~30° — the same threshold used by
+    /// `detect_sharp_corners`. This lets smooth stretches that were split
+    /// (e.g. by the recursive error split) still join tangent-continuously
+    /// even when the overall path contains one or more real corners.
     fn enforce_g1_continuity(&self, curves: &mut [BezierCurve]) {
+        let corner_turn = 30.0f64.to_radians();
         for i in 0..curves.len().saturating_sub(1) {
             let current_control2 = curves[i].control2.clone();
             let current_end = curves[i].end.clone();
@@ -519,6 +539,12 @@ impl BezierFitter {
             let len2 = (t2x * t2x + t2y * t2y).sqrt();
 
             if len1 > 1e-10 && len2 > 1e-10 {
+                // Skip G1 alignment at sharp corners (preserve the kink).
+                let cos_turn = ((t1x * t2x + t1y * t2y) / (len1 * len2)).clamp(-1.0, 1.0);
+                let turn = cos_turn.acos();
+                if turn > corner_turn {
+                    continue;
+                }
                 let scale = len2 / len1;
                 next.control1.x = next.start.x + t1x * scale;
                 next.control1.y = next.start.y + t1y * scale;
@@ -799,6 +825,56 @@ mod tests {
         ];
         let curves = fitter.fit_path(&points, true);
         assert!(!curves.is_empty());
+    }
+
+    #[test]
+    fn test_g1_preserves_sharp_corner() {
+        // An L-shape with a 90° corner: the junction at the corner must keep
+        // distinct tangents (not be G1-aligned), otherwise the corner rounds off.
+        let fitter = BezierFitter::new(2.0);
+        let mut points = Vec::new();
+        for x in 0..=10 {
+            points.push(Point { x: x as f64, y: 0.0 });
+        }
+        for y in 1..=10 {
+            points.push(Point { x: 10.0, y: y as f64 });
+        }
+        let curves = fitter.fit_path(&points, false);
+        assert!(curves.len() >= 2);
+        // Find the junction closest to the corner (10, 0) and verify the
+        // incoming and outgoing tangents are not parallel (corner preserved).
+        let mut found_corner_junction = false;
+        for i in 0..curves.len().saturating_sub(1) {
+            let j = i + 1;
+            if (curves[i].end.x - 10.0).abs() < 1.5 && (curves[i].end.y - 0.0).abs() < 1.5 {
+                let t1x = curves[i].end.x - curves[i].control2.x;
+                let t1y = curves[i].end.y - curves[i].control2.y;
+                let t2x = curves[j].control1.x - curves[j].start.x;
+                let t2y = curves[j].control1.y - curves[j].start.y;
+                let cross = t1x * t2y - t1y * t2x;
+                assert!(cross.abs() > 1e-3, "corner was G1-smoothed away");
+                found_corner_junction = true;
+                break;
+            }
+        }
+        assert!(found_corner_junction, "expected a junction near the L corner");
+    }
+
+    #[test]
+    fn test_centripetal_parameterization_monotonic_and_bounded() {
+        let fitter = BezierFitter::new(2.0);
+        let points = vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 10.0, y: 0.0 },
+            Point { x: 10.0, y: 10.0 },
+            Point { x: 0.0, y: 10.0 },
+        ];
+        let t = fitter.chord_length_parameterize(&points);
+        assert_eq!(t[0], 0.0);
+        assert!((t[t.len() - 1] - 1.0).abs() < 1e-9);
+        for i in 1..t.len() {
+            assert!(t[i] > t[i - 1], "parameterization must be strictly increasing");
+        }
     }
 
     #[test]
