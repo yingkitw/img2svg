@@ -18,15 +18,15 @@
 
 ### Testing
 - [x] Unit tests for image_processor (~25 tests)
-- [x] Unit tests for vectorizer (~41 tests)
-- [x] Unit tests for svg_generator (~26 tests)
+- [x] Unit tests for vectorizer (~44 tests)
+- [x] Unit tests for svg_generator (~11 tests)
 - [x] Integration tests (38 tests): legacy pipeline, **enhanced pipeline**, **`convert` / `convert_to_svg_string`**, **`convert_enhanced` / `convert_enhanced_to_svg_string`**, **`batch_convert_enhanced`**, auto `num_colors`, **original vs enhanced parity**, **use-case examples** (logo, transparency), **superpixel/centerline/logo/EPS/autotrace/DXF/GeoJSON/Gimppath**, **coordinate precision**, **animated GIF / CMYK / WebP / BMP / JPEG**
-- [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides, **`--progress`** / **`--autotrace`** flags, **`--format`** inference (13 tests, `src/cli.rs`)
-- [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (14 tests, `src/mcp.rs`)
+- [x] CLI unit tests: `is_supported_image`, **`--preset`** parsing and overrides, **`--progress`** / **`--autotrace`** flags, **`--format`** inference (~21 tests, `src/cli.rs`)
+- [x] MCP server unit tests: initialize, tools/list schema, tools/call validation and happy path (18 tests, `src/mcp.rs`)
 - [x] MCP enhanced pipeline as default; `legacy`, `preset`, mode flags, and `output_format` parameters
 - [x] MCP batch tool `convert_image_directory` + library `batch_convert_enhanced()`
 - [x] Library API tests (3 doctests + 3 unit tests)
-- [x] Run `cargo test` for full counts (221 lib + 239 bin + 17 `img2svg-mcp` + 38 integration + 3 doctests = 518 test executions; `cargo test --features mcp` for the MCP binary)
+- [x] Run `cargo test` for full counts (221 lib + 239 bin + 18 `img2svg-mcp` + 38 integration + 3 doctests = 519 test executions; `cargo test --features mcp` for the MCP binary)
 - [x] Criterion benchmark `benches/pipeline_comparison.rs` (original vs enhanced at 128/256/512 px)
 
 ### Project Structure
@@ -44,7 +44,7 @@
 - [x] --preprocess CLI flag
 
 ### Enhanced Pipeline (merged from vec project)
-- [x] K-means++ initialization + k-means refinement (8 iterations) for better palette
+- [x] K-means++ initialization + k-means refinement (12 iterations, early convergence, empty-cluster reseeding) for better palette
 - [x] Perceptual color distance weighting (R=2, G=4, B=3)
 - [x] Sobel edge detection for edge-aware quantization
 - [x] Edge-aware quantization with majority-vote smoothing (multi-pass, 3×3 window)
@@ -132,6 +132,10 @@
   - Bézier fitter: centripetal parameterization (reduces overshoot at sharp turns) + G1 continuity that respects real sharp corners (smoothes error-split junctions without rounding off corners) in `bezier_fitter.rs`
   - Recolor methods: `RecolorMethod` enum (Mean/Median/Mode) in `enhanced_vectorizer.rs`; `--recolor-mode` CLI / `EnhancedOptions.recolor_method` / MCP `recolor_method` — median/mode avoid muddy averaged colors in flat-color graphics
 
+- [x] Documentation audit 2026-09-26: fixed stale test counts (cli 13→21, mcp 14→17, vectorizer 41→44, svg_generator 26→11, enhanced_vectorizer 18→25), k-means "8 iterations" → 12, ARCHITECTURE PCA → multi-candidate gradient fit, README `--curve-tolerance` "with --optimize-curves" → always-effective fitting strictness, added missing `--optimize-tolerance` to SPEC, removed duplicate ToC entry, removed unused `svg` crate dependency, removed WASM out-of-scope mention; AGENTS.md adopted scorecard step, web2md research conventions, and memory-quality additions from sibling project
+
+- [x] MCP wiring for `curve_tolerance` / `group_by_color` (2026-09-26): new `DEFAULT_CURVE_TOLERANCE` constant in `enhanced_vectorizer`, re-exported at crate root; both params added to MCP `ConvertToolArgs`, `shared_convert_properties()`, and tool schemas (PDF tool omits `group_by_color` — SVG-only concern); schema + wiring tests (18 MCP tests total)
+
 ## Pending 🚧
 
 *(none — all planned items implemented)*
@@ -160,6 +164,5 @@ Seeded by competitive intelligence (Potrace / vtracer / Inkscape, 2026-09-08):
 - [x] Multi-page PDF output for batch conversions (Potrace / Inkscape)
 
 ### Out of scope (will not implement)
-- WebAssembly compilation (not in scope)
 - GUI application / live interactive preview server (CLI and library only)
 - Optical character recognition (OCR) text preservation (no OCR dependency)

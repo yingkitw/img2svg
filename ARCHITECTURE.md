@@ -163,7 +163,7 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 
 ### Enhanced Pipeline Algorithms (merged from vec project)
 - **K-means++ initialization**: Probabilistic centroid selection proportional to distance²
-- **K-means refinement**: 8 iterations with perceptual color distance (R=2, G=4, B=3)
+- **K-means refinement**: 12 iterations with early convergence, empty-cluster reseeding, and alpha-aware perceptual color distance (R=2, G=4, B=3, alpha gap)
 - **Sobel edge detection**: Gradient-based edge map for edge-aware quantization
 - **Edge-aware quantization**: Majority-vote smoothing on non-edge pixels (3×3 window, 2 passes)
 - **Marching squares contours**: Shared with original pipeline for robust sub-pixel contour extraction
@@ -189,6 +189,7 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Incremental SVG generation**: `generate_enhanced_svg_to` writes directly to `Write` implementors
 - **Adjustable coordinate precision**: `EnhancedOptions.coordinate_precision` (1–6, default 2) flows through the `bezier_to_svg_path_to_prec` writer chain; non-SVG formats and thin-stripe rects (integers) are unaffected
 - **Parameterized curve merging**: `EnhancedOptions.optimize_tolerance` (default 1.5) controls Potrace `-O` style merging via `optimize_bezier_curves_with_tolerance`
+- **Bézier fit tolerance**: `EnhancedOptions.curve_tolerance` (default 2.0) sets least-squares fit strictness — higher values produce fewer, gentler segments; `optimize_tolerance` merges after fitting
 - **Native gradient fills**: opt-in `EnhancedOptions.detect_gradients` runs `gradient_detector` per color mask against the **original** image and emits `<defs>` `<linearGradient>`/`<radialGradient>` fills (`url(#img2svg-grad-N)`), deduplicated and emitted before all paths
 - **Zero-length segment removal**: Duplicate formatted coordinates skipped in `create_subpath_string`
 
@@ -204,7 +205,7 @@ ImageData → bilateral_filter (edge-preserving smoothing)
 - **Rand 0.10 compatibility**: `rng()` / `random_range()` / `random()` API (was `thread_rng()` / `gen_range()` / `gen()`)
 - **SmartThreshold**: Auto-selects Otsu vs adaptive thresholding based on histogram separability measure
 - **Zero-length segment removal**: Skips duplicate formatted coordinates in SVG path strings
-- **Gradient detection**: `detect_gradient` identifies linear and radial gradients via PCA + linear regression per channel for native SVG gradient rendering
+- **Gradient detection**: `detect_gradient` fits linear and radial candidates (axis-aligned + 45° diagonal directions picked by lowest MSE, per 4-connected component) for native SVG gradient rendering; degenerate fits (start ≈ end color) are rejected
 - **Animated GIF support**: `load_animated_gif` loads all frames with delays; CLI outputs numbered SVG files (`output_001.svg`, etc.)
 - **CMYK color space support**: `cmyk_to_rgb` converts CMYK to RGB; `detect_color_space` inspects JPEG APP14 markers to detect CMYK source images
 - **Fully streaming enhanced pipeline**: `generate_enhanced_svg_to` streams paths directly with zero-allocation path writing (`bezier_to_svg_path_to`), no intermediate `ColorGroup` collection or `path_data` strings
@@ -261,7 +262,7 @@ batch_convert_to_pdf(
 - `input_path`, `output_path` (required)
 - **Default pipeline**: enhanced Bézier (matches CLI without `--original`)
 - `legacy` (optional): Use median-cut / RDP line-segment pipeline
-- `num_colors`, `preprocess`, `preset`, `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `output_format`
+- `num_colors`, `preprocess`, `preset`, `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `optimize_curves`, `optimize_tolerance`, `curve_tolerance`, `min_region_area`, `coordinate_precision`, `gradients`, `subpixel_contours`, `recolor_method`, `group_by_color`, `output_format`
 - `smooth_level`, `threshold` (legacy pipeline only)
 - `max_size` (optional): Auto-resize images exceeding this dimension (default 4096) to prevent OOM
 - `progress_token` (optional): Receives real-time `notifications/progress` during conversion
@@ -282,7 +283,6 @@ batch_convert_to_pdf(
 
 - `image` (0.24) — raster image loading (PNG, JPEG, BMP, TIFF, WebP, etc.)
 - `clap` (4.0) — CLI argument parsing
-- `svg` (0.13) — SVG document building helpers
 - `serde` / `serde_json` — optional, behind the `mcp` feature; serialization for MCP protocol
 - `rgb` (0.8) — RGBA8 pixel type
 - `anyhow` — Error handling
@@ -293,7 +293,7 @@ batch_convert_to_pdf(
 ### Test Dependencies
 - `criterion` (0.5, dev-dependency) — benchmark harness for `benches/pipeline_comparison.rs`
 - Test images in `examples/input/`
-- 518 test executions: 221 lib + 239 bin + 17 MCP + 38 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` and `gradient_detector` tests run in both targets). Run with `cargo test --features mcp` to include the MCP binary tests
+- 519 test executions: 221 lib + 239 bin + 18 MCP + 38 integration + 3 doctests (lib and bin targets share most unit-test modules; `cli.rs` and `gradient_detector` tests run in both targets). Run with `cargo test --features mcp` to include the MCP binary tests
 
 ## Performance Characteristics
 

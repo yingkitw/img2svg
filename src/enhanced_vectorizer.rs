@@ -128,6 +128,9 @@ pub enum RecolorMethod {
     Mode,
 }
 
+/// Default Bézier fit tolerance for [`EnhancedOptions::curve_tolerance`].
+pub const DEFAULT_CURVE_TOLERANCE: f64 = 2.0;
+
 /// Enhanced vectorization options.
 #[derive(Debug, Clone)]
 pub struct EnhancedOptions {
@@ -195,7 +198,7 @@ impl Default for EnhancedOptions {
     fn default() -> Self {
         Self {
             num_colors: 0, // auto
-            curve_tolerance: 2.0,
+            curve_tolerance: DEFAULT_CURVE_TOLERANCE,
             simplification_tolerance: 1.5,
             corner_threshold: 60.0,
             min_region_area: 20,

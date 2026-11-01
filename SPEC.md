@@ -21,6 +21,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
   - `--centerline`: Centerline/stroke tracing for line art
   - `--optimize-corners`: Potrace-style Bézier corner optimization
   - `--optimize-curves`: Potrace `-O` style merge of nearly-linear curve segments
+  - `--optimize-tolerance`: Merge tolerance in pixels for `--optimize-curves` (default 1.5; higher merges more)
   - `--logo-mode`: Separate fill regions and outline strokes (auto-enabled for `--preset logo`)
   - `--min-region-area`: Despeckle threshold in pixels (default 20; Potrace turdsize equivalent)
   - `--no-despeckle`: Disable despeckle pass
@@ -30,7 +31,7 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
    - `--format`: Output format — `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (default `svg`; inferred from `-o` extension). Enhanced pipeline supports all formats; with `--original`, only `svg`/`eps` are written directly (other formats fall back to SVG with a note)
    - `--precision`: Decimal places for SVG path coordinates, 1-6 (default 2; enhanced pipeline only; lower values shrink output)
    - `--quality-preset`: Human-readable precision preset (`low`=1, `medium`=2, `high`=6); overrides `--precision` when set
-   - `--curve-tolerance`: Bézier fitting strictness in pixels (default 2.0); higher values produce fewer, gentler segments
+   - `--curve-tolerance`: Bézier fitting strictness in pixels (default 2.0); higher values produce fewer, gentler segments (always effective in the enhanced pipeline; composes with `--optimize-curves` post-fit merging)
    - `--stats`: Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed ms) after conversion
    - `--gradients`: Detect smooth gradients per region (against the original image) and render them as native SVG `<defs>` gradient fills
    - `--group-by-color`: Wrap each color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers (default off)
@@ -46,9 +47,11 @@ Convert raster images (PNG, JPEG, etc.) to scalable vector graphics (SVG) with f
 - `min_region_area` (integer, default 20): despeckle threshold
 - `coordinate_precision` (integer, 1-6, default 2): SVG path coordinate decimals
 - `optimize_tolerance` (number, default 1.5): merge tolerance for `optimize_curves`
+- `curve_tolerance` (number, default 2.0): Bézier fitting strictness — higher values produce fewer, gentler segments
 - `gradients` (boolean, default false): native SVG gradient fills for smooth regions
 - `subpixel_contours` (boolean, default true): interpolated marching squares for smoother contours
 - `recolor_method` (string, default `mean`): `mean`, `median`, or `mode` for region display colors
+- `group_by_color` (boolean, default false): wrap each fill-color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers (SVG output)
 - `output_format`: `svg`, `eps`, `pdf`, or `ai` (default `svg`, or inferred from output path extension)
 - `smooth_level`, `threshold` (legacy only)
 - `max_size`, `progress_token`
@@ -114,7 +117,7 @@ Applied before quantization for photographs:
 - ✅ Proper z-ordering: background rect, then colors by decreasing area
 - ✅ Edge snapping: boundary points snap to image edges
 - ✅ Path simplification removes redundant points while preserving shape
-- ✅ 518 test executions passing (221 lib + 239 bin + 17 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
+- ✅ 519 test executions passing (221 lib + 239 bin + 18 MCP + 38 integration + 3 doctests); run with `cargo test --features mcp` to include the MCP binary tests
 
 ### Performance Targets
 - Simple graphics (50x50): <100ms conversion time
@@ -150,8 +153,8 @@ Applied before quantization for photographs:
   - Edge cases (empty, single color, zero colors)
   - Median-cut algorithm tests
   - Animated GIF loading, CMYK conversion, color space detection
-- `vectorizer_tests.rs`: ~41 tests
-  - Marching squares contour tracing
+- `vectorizer_tests.rs`: ~44 tests
+  - Marching squares contour tracing (midpoint + interpolated sub-pixel variants)
   - Polygon area calculation (signed/unsigned)
   - Point-in-polygon detection
   - Hole detection (`has_holes`)
@@ -159,7 +162,7 @@ Applied before quantization for photographs:
   - RDP simplification
   - Boundary smoothing
   - Full vectorization pipeline
-- `svg_generator_tests.rs`: ~26 tests
+- `svg_generator_tests.rs`: ~11 tests
   - SVG generation with various inputs
   - Alpha channel output (`fill-opacity`)
   - Hierarchical evenodd fill-rule
@@ -167,12 +170,22 @@ Applied before quantization for photographs:
   - Subpath string creation
   - Multi-path handling
   - Streaming writer-based generation
-- `image_filters/*`: ~50 tests across Canny, color ops, contrast, effects, enhancement, morphology, segmentation, thresholding, denoising
-- `enhanced_vectorizer.rs`: ~18 tests
+- `image_filters/*`: ~38 tests across Canny, color ops, contrast, effects, enhancement, morphology, segmentation, thresholding, denoising
+- `bezier_fitter.rs`: ~17 tests
+  - Least-squares cubic fit, Newton-Raphson reparameterization
+  - Centripetal parameterization, corner-aware G1 continuity
+  - Curve-merge tolerance (`optimize_bezier_curves_with_tolerance`)
+- `gradient_detector.rs`: ~11 tests
+  - Linear/radial gradient direction fitting (thin strips, diagonals)
+  - Degenerate rejection, per-connected-component detection
+- `enhanced_vectorizer.rs`: ~25 tests
   - Enhanced pipeline vectorization
-  - SVG output including alpha and streaming
+  - SVG output including alpha, precision, and streaming
   - Progress-bar path
   - Autotrace heuristic selection (logo, icon, photo)
+  - Gradient defs deduplication/similarity, group-by-color layers
+- `eps_generator.rs`: 5 tests
+  - Multi-page PDF structure, MediaBoxes, xref offsets, y-flip
 - `extra_backends.rs`: 4 tests
   - Bézier flattening
   - GeoJSON, DXF, and Gimppath writers
@@ -180,15 +193,17 @@ Applied before quantization for photographs:
   - Conversion options defaults
   - `is_supported_image`
   - `convert_enhanced_to_svg_string`
-- `cli.rs`: 20 tests
+- `cli.rs`: ~21 tests
   - Preset defaults and override semantics
   - Supported image extension checks
   - `--progress`, `--autotrace`, `--stats`, and `--gradients` flag parsing
   - `--format` inference and explicit format parsing
   - `--precision` parsing, default, and range rejection
   - `--optimize-tolerance` default and parsing
-- `mcp.rs`: 17 tests
+- `mcp.rs`: 18 tests
   - Server initialization, tool schema, validation, enhanced default, legacy, preset, EPS export, batch directory, progress
+  - `curve_tolerance` / `group_by_color` wiring through `ConvertToolArgs` → `EnhancedOptions`
+- Remaining modules (path_simplifier, enhanced_quantizer, despeckle, preprocessor, edge_detector, centerline_tracer, logo_pipeline, region_extractor): ~35 tests combined
 
 ### Integration Tests (38 total)
 - Full pipeline conversion tests (legacy + enhanced)

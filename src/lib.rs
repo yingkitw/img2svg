@@ -74,7 +74,7 @@ pub use anyhow::Result;
 pub use enhanced_vectorizer::{
     generate_enhanced_svg, generate_enhanced_svg_prec, generate_enhanced_svg_to,
     generate_enhanced_svg_to_prec, vectorize_enhanced, write_enhanced_svg, write_enhanced_svg_prec,
-    EnhancedOptions, EnhancedPath, EnhancedVectorData, RecolorMethod,
+    EnhancedOptions, EnhancedPath, EnhancedVectorData, RecolorMethod, DEFAULT_CURVE_TOLERANCE,
 };
 /// Re-export image filter functions and types.
 pub use gradient_detector::{

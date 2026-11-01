@@ -2,7 +2,7 @@
 
 **img2svg** is a fast, pure-Rust library, CLI tool, and MCP server that converts raster images (PNG, JPEG, GIF, WebP, BMP, TIFF, ICO, and more) into clean, scalable SVG vector graphics. It uses cubic Bézier curves, edge-aware k-means quantization, Sobel edge detection, marching-squares contour tracing, and Potrace-style path optimization to produce compact, smooth vectors — ideal for logos, icons, illustrations, line art, and photos.
 
-[![Tests](https://img.shields.io/badge/tests-518%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
+[![Tests](https://img.shields.io/badge/tests-519%20passing-brightgreen)](https://github.com/yingkitw/img2svg)
 [![crates.io](https://img.shields.io/crates/v/img2svg.svg)](https://crates.io/crates/img2svg)
 [![docs.rs](https://img.shields.io/docsrs/img2svg)](https://docs.rs/img2svg)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -42,8 +42,8 @@ The SVGs scale without pixelation, stay compact, and preserve sharp corners, smo
 - [Limitations](#limitations)
 - [Contributing](#contributing)
 - [FAQ](#faq)
-- [Contributing](#contributing)
 - [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ## What is img2svg?
 
@@ -129,7 +129,7 @@ Converting raster images to vector format is essential for:
 | **Default pipeline** | Cubic Bézier with edge-aware quantization |
 | **CLI binary** | `img2svg` |
 | **MCP binary** | `img2svg-mcp` |
-| **Test count** | 518 passing (`cargo test --features mcp` for the MCP binary tests) |
+| **Test count** | 519 passing (`cargo test --features mcp` for the MCP binary tests) |
 | **Performance** | ~60–70 ms for a 512×512 image (release build) |
 | **Default max dimension** | 4096 px (auto-resizes larger images) |
 
@@ -259,7 +259,7 @@ Real SVG output snippets showing how each flag shapes the result. Generated from
 
 `low` shrinks files for icons and logos; `high` preserves fine curvature for technical drawings.
 
-#### Curve Tolerance (`--curve-tolerance` with `--optimize-curves`)
+#### Curve Tolerance (`--curve-tolerance`)
 
 Generated from `line_art.png`:
 
@@ -407,7 +407,7 @@ img2svg -i huge_photo.jpg -o output.svg --max-size 2048
 | `--format` | | svg | Output format: `svg`, `eps`, `pdf`, `ai`, `dxf`, `geo-json`, or `gimppath` (also inferred from `-o` extension) |
 | `--precision` | | 2 | Decimal places for SVG path coordinates (1–6). Lower values shrink the file (vtracer `path_precision` parity); enhanced pipeline only |
 | `--quality-preset` | | `medium` | Human-readable precision preset: `low` (1 decimal), `medium` (2), or `high` (6). Overrides `--precision` when set |
-| `--curve-tolerance` | | 2.0 | Bézier fitting strictness. Higher values yield fewer, gentler segments (smaller SVG); lower values preserve fine curvature (larger SVG). Effective with `--optimize-curves` |
+| `--curve-tolerance` | | 2.0 | Bézier fitting strictness for the enhanced pipeline. Higher values yield fewer, gentler segments (smaller SVG); lower values preserve fine curvature (larger SVG). Composes with `--optimize-curves`, which merges segments after fitting |
 | `--stats` | | false | Print a per-file conversion summary (dimensions, paths, colors, output size, elapsed time) |
 | `--gradients` | | false | Detect smooth gradients per region and render them as native SVG `<defs>` gradient fills |
 | `--group-by-color` | | false | Wrap each color group in `<g data-img2svg-color="#hex">` for Inkscape-style hierarchical layers |
@@ -549,9 +549,11 @@ The MCP server provides two tools:
   - `centerline`, `logo_mode`, `superpixel`, `optimize_corners`, `optimize_curves` (optional booleans)
   - `min_region_area` (optional, default 20), `coordinate_precision` (optional, 1–6, default 2)
   - `optimize_tolerance` (optional, default 1.5): merge tolerance for `optimize_curves`
+  - `curve_tolerance` (optional, default 2.0): Bézier fitting strictness — higher yields fewer, gentler segments
   - `gradients` (optional, default false): native SVG gradient fills for smooth regions
   - `subpixel_contours` (optional, default true): interpolated marching squares for smoother contours
   - `recolor_method` (optional, default `mean`): `mean`, `median`, or `mode` for region display colors
+  - `group_by_color` (optional, default false): wrap each fill-color group in `<g data-img2svg-color="#hex">` for Inkscape-style layers
   - `output_format` (optional): `svg`, `eps`, `pdf`, or `ai`
   - `smooth_level`, `threshold` (optional): Legacy pipeline only
   - `max_size`, `progress_token` (optional)

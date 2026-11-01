@@ -149,6 +149,8 @@ struct ConvertToolArgs {
     optimize_corners: bool,
     optimize_curves: bool,
     optimize_tolerance: f64,
+    curve_tolerance: f64,
+    group_by_color: bool,
     min_region_area: usize,
     coordinate_precision: u32,
     detect_gradients: bool,
@@ -225,6 +227,15 @@ impl ConvertToolArgs {
                 .and_then(|v| v.as_f64())
                 .filter(|t| *t > 0.0)
                 .unwrap_or(img2svg::DEFAULT_OPTIMIZE_TOLERANCE),
+            curve_tolerance: args
+                .get("curve_tolerance")
+                .and_then(|v| v.as_f64())
+                .filter(|t| *t > 0.0)
+                .unwrap_or(img2svg::DEFAULT_CURVE_TOLERANCE),
+            group_by_color: args
+                .get("group_by_color")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             min_region_area: args
                 .get("min_region_area")
                 .and_then(|v| v.as_i64())
@@ -282,11 +293,13 @@ impl ConvertToolArgs {
             optimize_corners: self.optimize_corners,
             optimize_curves: self.optimize_curves,
             optimize_tolerance: self.optimize_tolerance,
+            curve_tolerance: self.curve_tolerance,
             min_region_area: self.min_region_area,
             coordinate_precision: self.coordinate_precision,
             detect_gradients: self.detect_gradients,
             subpixel_contours: self.subpixel_contours,
             recolor_method: self.recolor_method,
+            group_by_color: self.group_by_color,
             ..Default::default()
         };
         if let Some(p) = self.preset {
@@ -430,6 +443,12 @@ fn shared_convert_properties() -> Value {
             "minimum": 0.1,
             "default": 1.5
         },
+        "curve_tolerance": {
+            "type": "number",
+            "description": "Bézier fitting strictness: higher values produce fewer, gentler segments (smaller output); lower values preserve fine curvature. Default: 2.0.",
+            "minimum": 0.1,
+            "default": 2.0
+        },
         "min_region_area": {
             "type": "integer",
             "description": "Despeckle: merge connected regions smaller than this (pixels). 0 = off. Default: 20.",
@@ -458,6 +477,11 @@ fn shared_convert_properties() -> Value {
             "enum": ["mean", "median", "mode"],
             "description": "How to derive each region's display color from the original pixels: mean (default), median, or mode. Median/mode avoid muddy averaged colors in flat-color graphics.",
             "default": "mean"
+        },
+        "group_by_color": {
+            "type": "boolean",
+            "description": "Wrap each fill-color group in an SVG <g data-img2svg-color=\"#hex\"> element for Inkscape-style hierarchical layers.",
+            "default": false
         },
         "output_format": {
             "type": "string",
@@ -535,11 +559,13 @@ impl Img2SvgMcpServer {
                                 "optimize_corners": shared["optimize_corners"],
                                 "optimize_curves": shared["optimize_curves"],
                                 "optimize_tolerance": shared["optimize_tolerance"],
+                                "curve_tolerance": shared["curve_tolerance"],
                                 "min_region_area": shared["min_region_area"],
                                 "coordinate_precision": shared["coordinate_precision"],
                                 "gradients": shared["gradients"],
                                 "subpixel_contours": shared["subpixel_contours"],
                                 "recolor_method": shared["recolor_method"],
+                                "group_by_color": shared["group_by_color"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
@@ -570,11 +596,13 @@ impl Img2SvgMcpServer {
                                 "optimize_corners": shared["optimize_corners"],
                                 "optimize_curves": shared["optimize_curves"],
                                 "optimize_tolerance": shared["optimize_tolerance"],
+                                "curve_tolerance": shared["curve_tolerance"],
                                 "min_region_area": shared["min_region_area"],
                                 "coordinate_precision": shared["coordinate_precision"],
                                 "gradients": shared["gradients"],
                                 "subpixel_contours": shared["subpixel_contours"],
                                 "recolor_method": shared["recolor_method"],
+                                "group_by_color": shared["group_by_color"],
                                 "output_format": shared["output_format"],
                                 "max_size": shared["max_size"],
                                 "progress_token": shared["progress_token"]
@@ -605,6 +633,7 @@ impl Img2SvgMcpServer {
                                 "optimize_corners": shared["optimize_corners"],
                                 "optimize_curves": shared["optimize_curves"],
                                 "optimize_tolerance": shared["optimize_tolerance"],
+                                "curve_tolerance": shared["curve_tolerance"],
                                 "min_region_area": shared["min_region_area"],
                                 "coordinate_precision": shared["coordinate_precision"],
                                 "gradients": shared["gradients"],
@@ -928,7 +957,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::Img2SvgMcpServer;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[test]
     fn initialize_returns_server_info() {
@@ -957,9 +986,11 @@ mod tests {
         assert!(props.contains_key("centerline"));
         assert!(props.contains_key("coordinate_precision"));
         assert!(props.contains_key("optimize_tolerance"));
+        assert!(props.contains_key("curve_tolerance"));
         assert!(props.contains_key("gradients"));
         assert!(props.contains_key("subpixel_contours"));
         assert!(props.contains_key("recolor_method"));
+        assert!(props.contains_key("group_by_color"));
         let required = tools[0]["inputSchema"]["required"]
             .as_array()
             .expect("required");
@@ -967,6 +998,26 @@ mod tests {
         let pdf_required = tools[2]["inputSchema"]["required"].as_array().expect("required");
         assert!(pdf_required.contains(&json!("input_dir")));
         assert!(pdf_required.contains(&json!("output_path")));
+    }
+
+    #[test]
+    fn tools_args_curve_tolerance_and_group_by_color_wire_through() {
+        let make_map = |v: Value| -> serde_json::Map<String, Value> {
+            v.as_object().expect("object").clone()
+        };
+        let args = make_map(json!({
+            "curve_tolerance": 4.0,
+            "group_by_color": true
+        }));
+        let parsed = super::ConvertToolArgs::parse(&args, None);
+        let opts = parsed.enhanced_options();
+        assert_eq!(opts.curve_tolerance, 4.0);
+        assert!(opts.group_by_color);
+
+        let defaults = super::ConvertToolArgs::parse(&serde_json::Map::new(), None);
+        let dopts = defaults.enhanced_options();
+        assert_eq!(dopts.curve_tolerance, img2svg::DEFAULT_CURVE_TOLERANCE);
+        assert!(!dopts.group_by_color);
     }
 
     #[test]
